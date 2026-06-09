@@ -31,13 +31,14 @@
 
 ## Validation Summary
 
-**Status**: PASS (iteration 1)
+**Status**: PASS (iteration 3 — clarify session)
 
 **Reviewed**: 2026-06-09
 
-All checklist items passed on first validation pass. Technology choices (React Native, TypeScript, backend stack) are deferred to the implementation plan per Assumptions; the specification itself remains focused on user outcomes, privacy constraints, and measurable behavior.
+All checklist items passed after clarify session (skippable onboarding, sign-in-only consent, bundled defaults, Settings-only sign-in, discard-local on first sign-in).
 
 ## Notes
 
-- Ready for `/speckit-plan`
-- Optional refinement via `/speckit-clarify` if stakeholders want to adjust MVP boundaries (e.g., auth-required vs. auth-optional flows)
+- **2026-06-09 revision**: Sign-in and server communication are optional; core masking works offline without account (FR-024 superseded, FR-032/FR-033 added, SC-012 added).
+- **2026-06-09 clarify**: FR-034/FR-035 added; first sign-in discards local favorites/preferences with warning (FR-035).
+- Ready for `/speckit-plan` re-sync — plan/tasks/implementation still assume auth-required flows

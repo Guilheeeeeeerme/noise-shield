@@ -8,6 +8,8 @@
 
 **Organization**: Tasks grouped by user story for independent implementation and testing.
 
+**Spec revision (2026-06-09)**: Sign-in and server communication are optional. Onboarding skippable. Consent prompt sign-in-only. Bundled analysis defaults. Sign-in in Settings only. First sign-in discards local data with warning.
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
@@ -49,136 +51,144 @@
 - [X] T021 [P] Setup Expo Router navigation shell in `apps/mobile/app/_layout.tsx` and `apps/mobile/app/index.tsx`
 - [X] T022 Implement auth store with secure token persistence in `apps/mobile/src/stores/authStore.ts`
 - [X] T023 Implement typed API client in `apps/mobile/src/services/api/client.ts`
-- [X] T024 Implement sign-in screen with Google/Apple/Facebook buttons in `apps/mobile/app/(auth)/sign-in.tsx`
-- [X] T025 Implement auth gate redirect preventing session routes when unsigned in `apps/mobile/src/features/auth/AuthGate.tsx`
+- [ ] T024 Refactor root navigation in `apps/mobile/app/index.tsx` to route unsigned users directly to session (no sign-in redirect)
+- [ ] T025 Remove mandatory auth gate in `apps/mobile/src/features/auth/AuthGate.tsx`; allow unsigned access to all core routes
 - [X] T026 [P] Configure MMKV storage wrapper in `apps/mobile/src/services/storage/mmkv.ts`
 - [X] T027 [P] Configure SQLite sync queue schema in `apps/mobile/src/services/sync/schema.sql`
+- [ ] T028 [P] Add bundled default analysis tuning constants in `packages/shared/src/config/defaults.ts` per FR-034
+- [ ] T029 Wire bundled defaults fallback in `apps/mobile/src/services/config/bundledDefaults.ts`
 
-**Checkpoint**: Foundation ready — authenticated mobile shell and API auth online
+**Checkpoint**: Foundation ready — unsigned users can reach session; optional API auth online
 
 ---
 
 ## Phase 3: User Story 1 — Core Masking Session (Priority: P1) 🎯 MVP
 
-**Goal**: Signed-in user can start a masking session, control volume/sound/timer, and play audio offline with background continuity
+**Goal**: Any user (signed in or not) can start a masking session, control volume/sound/timer, and play audio offline with background continuity
 
-**Independent Test**: Sign in, disable network, start session, switch sounds, set timer, lock screen for 10+ minutes, stop session (quickstart Scenario 1–3)
+**Independent Test**: Launch app without sign-in or network, start session, switch sounds, set timer, lock screen 10+ minutes, stop session (quickstart Scenarios 1–3)
 
 ### Implementation for User Story 1
 
-- [X] T028 [P] [US1] Bundle masking audio assets in `apps/mobile/assets/audio/`
-- [X] T029 [P] [US1] Implement session state machine types and transitions in `apps/mobile/src/features/session/sessionStateMachine.ts`
-- [X] T030 [US1] Implement Zustand session store in `apps/mobile/src/stores/sessionStore.ts`
-- [X] T031 [US1] Implement react-native-track-player adapter for `MaskingPlaybackPort` in `apps/mobile/src/services/playback/TrackPlayerAdapter.ts`
-- [X] T032 [US1] Register playback service and remote events in `apps/mobile/src/services/playback/playbackService.ts`
-- [X] T033 [US1] Configure iOS background audio mode in `apps/mobile/ios/NoiseShield/Info.plist` via Expo config
-- [X] T034 [US1] Configure Android foreground media service in `apps/mobile/android/` via Expo config plugin
-- [X] T035 [US1] Implement session home screen with start/stop controls in `apps/mobile/app/(main)/session/index.tsx`
-- [X] T036 [US1] Implement sound picker UI for 8 masking sounds in `apps/mobile/src/features/session/SoundPicker.tsx`
-- [X] T037 [US1] Implement volume slider control in `apps/mobile/src/features/session/VolumeControl.tsx`
-- [X] T038 [US1] Implement session timer picker and expiry handler in `apps/mobile/src/features/session/TimerControl.tsx`
-- [X] T039 [US1] Implement local favorites persistence (device-only) in `apps/mobile/src/features/session/favoritesLocal.ts`
-- [X] T040 [US1] Wire offline session path ensuring no API calls during playback in `apps/mobile/src/features/session/startSession.ts`
-- [X] T041 [US1] Implement session-ended feedback UI state in `apps/mobile/src/features/session/SessionEndedBanner.tsx`
-- [X] T042 [US1] Handle audio focus interruptions (calls/other apps) in `apps/mobile/src/services/playback/audioFocus.ts`
+- [X] T030 [P] [US1] Bundle masking audio assets in `apps/mobile/assets/audio/`
+- [X] T031 [P] [US1] Implement session state machine types and transitions in `apps/mobile/src/features/session/sessionStateMachine.ts`
+- [X] T032 [US1] Implement Zustand session store in `apps/mobile/src/stores/sessionStore.ts`
+- [X] T033 [US1] Implement react-native-track-player adapter for `MaskingPlaybackPort` in `apps/mobile/src/services/playback/TrackPlayerAdapter.ts`
+- [X] T034 [US1] Register playback service and remote events in `apps/mobile/src/services/playback/playbackService.ts`
+- [X] T035 [US1] Configure iOS background audio mode in `apps/mobile/app.json` via Expo config
+- [X] T036 [US1] Configure Android foreground media service in `apps/mobile/app.json` via Expo config plugin
+- [X] T037 [US1] Implement session home screen with start/stop controls in `apps/mobile/app/(main)/session/index.tsx`
+- [X] T038 [US1] Implement sound picker UI for 8 masking sounds in `apps/mobile/src/features/session/SoundPicker.tsx`
+- [X] T039 [US1] Implement volume slider control in `apps/mobile/src/features/session/VolumeControl.tsx`
+- [X] T040 [US1] Implement session timer picker and expiry handler in `apps/mobile/src/features/session/TimerControl.tsx`
+- [X] T041 [US1] Implement local favorites persistence (device-only) in `apps/mobile/src/features/session/favoritesLocal.ts`
+- [ ] T042 [US1] Verify offline unsigned session path makes zero API calls in `apps/mobile/src/features/session/startSession.ts`
+- [X] T043 [US1] Implement session-ended feedback UI state in `apps/mobile/src/features/session/SessionEndedBanner.tsx`
+- [X] T044 [US1] Handle audio focus interruptions (calls/other apps) in `apps/mobile/src/services/playback/audioFocus.ts`
+- [ ] T045 [US1] Remove sign-in prompts from session flow; ensure `apps/mobile/app/(auth)/sign-in.tsx` is not auto-routed
 
-**Checkpoint**: User Story 1 fully functional — core masking works offline after sign-in
+**Checkpoint**: User Story 1 fully functional — core masking works offline without sign-in
 
 ---
 
 ## Phase 4: User Story 2 — Onboarding, Permissions, and Privacy (Priority: P2)
 
-**Goal**: First-time users understand the product, grant or deny mic access safely, and see separate data-collection consent
+**Goal**: First-time users understand the product, can skip onboarding, grant or deny mic access safely; data consent shown only to signed-in users
 
-**Independent Test**: Fresh install → onboarding copy → mic grant/deny paths → separate consent prompt → limited mode works (quickstart Scenarios 4 and 6)
+**Independent Test**: Fresh install → skip or complete onboarding → mic grant/deny paths → consent only after sign-in (quickstart Scenarios 4 and 6)
 
 ### Implementation for User Story 2
 
-- [X] T043 [P] [US2] Create onboarding slide content component in `apps/mobile/src/features/onboarding/OnboardingSlides.tsx`
-- [X] T044 [US2] Implement onboarding flow with completion flag in `apps/mobile/app/(onboarding)/index.tsx`
-- [X] T045 [US2] Implement microphone permission rationale screen in `apps/mobile/src/features/onboarding/MicPermissionScreen.tsx`
-- [X] T046 [US2] Integrate platform mic permission request via Expo AV or audio API in `apps/mobile/src/services/permissions/microphone.ts`
-- [X] T047 [US2] Implement limited/manual mode banner and gating in `apps/mobile/src/features/session/LimitedModeBanner.tsx`
-- [X] T048 [US2] Disable analysis hooks when mic denied in `apps/mobile/src/features/session/sessionController.ts`
-- [X] T049 [US2] Implement post-onboarding data consent modal in `apps/mobile/src/features/onboarding/DataConsentModal.tsx`
-- [X] T050 [US2] Implement consent API client methods in `apps/mobile/src/services/api/consentApi.ts`
-- [X] T051 [US2] Implement `GET/PUT /v1/consent` in `apps/api/src/modules/consent/consent.controller.ts` and service
-- [X] T052 [US2] Persist consent record in Prisma and enforce opt-in flag in `apps/api/src/modules/consent/consent.service.ts`
-- [X] T053 [US2] Add privacy disclaimer copy constants in `packages/shared/src/copy/privacy.ts`
+- [X] T046 [P] [US2] Create onboarding slide content component in `apps/mobile/src/features/onboarding/OnboardingSlides.tsx`
+- [ ] T047 [US2] Add skip control and Settings re-entry in `apps/mobile/app/(onboarding)/index.tsx` and `apps/mobile/src/features/settings/OnboardingSetting.tsx`
+- [X] T048 [US2] Implement microphone permission rationale screen in `apps/mobile/src/features/onboarding/MicPermissionScreen.tsx`
+- [X] T049 [US2] Integrate platform mic permission request via Expo AV in `apps/mobile/src/services/permissions/microphone.ts`
+- [X] T050 [US2] Implement limited/manual mode banner and gating in `apps/mobile/src/features/session/LimitedModeBanner.tsx`
+- [X] T051 [US2] Disable analysis hooks when mic denied in `apps/mobile/src/features/session/sessionController.ts`
+- [ ] T052 [US2] Gate data consent modal to signed-in users only in `apps/mobile/src/features/onboarding/DataConsentModal.tsx`
+- [X] T053 [US2] Implement consent API client methods in `apps/mobile/src/services/api/consentApi.ts`
+- [X] T054 [US2] Implement `GET/PUT /v1/consent` in `apps/api/src/modules/consent/consent.controller.ts` and service
+- [X] T055 [US2] Persist consent record in Prisma and enforce opt-in flag in `apps/api/src/modules/consent/consent.service.ts`
+- [X] T056 [US2] Add privacy disclaimer copy constants in `packages/shared/src/copy/privacy.ts`
 
-**Checkpoint**: Onboarding, mic permission, and separate consent flows complete
+**Checkpoint**: Skippable onboarding, mic permission, and sign-in-only consent flows complete
 
 ---
 
 ## Phase 5: User Story 3 — Noise Analysis and Adaptive Suggestions (Priority: P3)
 
-**Goal**: On-device ambient analysis with continuous refresh and automatic masking profile application
+**Goal**: On-device ambient analysis with continuous refresh and automatic masking profile application using bundled defaults when offline/unsigned
 
-**Independent Test**: Grant mic → start session in varied noise → see level indicator → auto-switch profile within 30s on ambient change (quickstart Scenario 5)
+**Independent Test**: Grant mic → start session in varied noise → see level indicator → auto-switch profile within 30s (quickstart Scenario 5)
 
 ### Implementation for User Story 3
 
-- [X] T054 [P] [US3] Implement `FakeAudioAnalysisPort` for tests in `packages/audio-analysis/src/fakeAudioAnalysisPort.ts`
-- [X] T055 [US3] Implement microphone capture adapter in `packages/audio-analysis/src/capture/MicCaptureAdapter.ts`
-- [X] T056 [US3] Implement RMS level bucketing in `packages/audio-analysis/src/analysis/levelEstimator.ts`
-- [X] T057 [US3] Implement heuristic broad-profile classifier in `packages/audio-analysis/src/analysis/profileClassifier.ts`
-- [X] T058 [US3] Implement MVP `AudioAnalysisPort` orchestrator in `packages/audio-analysis/src/heuristicAnalysisPort.ts`
-- [X] T059 [US3] Wire analysis start/stop to session lifecycle in `apps/mobile/src/features/analysis/analysisController.ts`
-- [X] T060 [US3] Implement noise level and profile UI in `apps/mobile/src/features/analysis/NoiseIndicator.tsx`
-- [X] T061 [US3] Implement auto-apply suggestion logic with debounce in `apps/mobile/src/features/analysis/autoApply.ts`
-- [X] T062 [US3] Implement crossfade transition in `apps/mobile/src/services/playback/crossfade.ts`
-- [X] T063 [US3] Implement manual override precedence rules in `apps/mobile/src/features/analysis/manualOverride.ts`
-- [X] T064 [US3] Implement quiet-environment and permission-revoked edge handling in `apps/mobile/src/features/analysis/edgeCases.ts`
-- [X] T065 [US3] Seed remote config defaults for thresholds in `apps/api/prisma/seed.ts`
+- [X] T057 [P] [US3] Implement `FakeAudioAnalysisPort` for tests in `packages/audio-analysis/src/fakeAudioAnalysisPort.ts`
+- [X] T058 [US3] Implement microphone capture adapter in `packages/audio-analysis/src/capture/MicCaptureAdapter.ts`
+- [X] T059 [US3] Implement RMS level bucketing in `packages/audio-analysis/src/analysis/levelEstimator.ts`
+- [X] T060 [US3] Implement heuristic broad-profile classifier in `packages/audio-analysis/src/analysis/profileClassifier.ts`
+- [X] T061 [US3] Implement MVP `AudioAnalysisPort` orchestrator in `packages/audio-analysis/src/heuristicAnalysisPort.ts`
+- [X] T062 [US3] Wire analysis start/stop to session lifecycle in `apps/mobile/src/features/analysis/analysisController.ts`
+- [X] T063 [US3] Implement noise level and profile UI in `apps/mobile/src/features/analysis/NoiseIndicator.tsx`
+- [X] T064 [US3] Implement auto-apply suggestion logic with debounce in `apps/mobile/src/features/analysis/autoApply.ts`
+- [X] T065 [US3] Implement crossfade transition in `apps/mobile/src/services/playback/crossfade.ts`
+- [X] T066 [US3] Implement manual override precedence rules in `apps/mobile/src/features/analysis/manualOverride.ts`
+- [X] T067 [US3] Implement quiet-environment and permission-revoked edge handling in `apps/mobile/src/features/analysis/edgeCases.ts`
+- [ ] T068 [US3] Load bundled defaults in `apps/mobile/src/features/analysis/autoApply.ts` when unsigned or offline
+- [X] T069 [US3] Seed remote config defaults for thresholds in `apps/api/prisma/seed.ts`
 
-**Checkpoint**: Adaptive analysis and auto-apply masking operational on-device
+**Checkpoint**: Adaptive analysis operational on-device with bundled-default fallback
 
 ---
 
-## Phase 6: User Story 4 — Sign-In and Preference Sync (Priority: P4)
+## Phase 6: User Story 4 — Optional Sign-In and Cross-Device Sync (Priority: P4)
 
-**Goal**: Cross-device preference and favorites sync with offline queue and server-timestamp LWW conflicts
+**Goal**: Optional Settings-only sign-in for cross-device sync; first sign-in discards local data with warning
 
-**Independent Test**: Two devices → offline change on B → online sync → later server timestamp wins (quickstart Scenario 7)
+**Independent Test**: Use app unsigned → sign in from Settings → confirm warning → local data discarded → sync when online (quickstart Scenario 7)
 
 ### Implementation for User Story 4
 
-- [X] T066 [P] [US4] Implement preferences module service with LWW in `apps/api/src/modules/preferences/preferences.service.ts`
-- [X] T067 [P] [US4] Implement favorites module service in `apps/api/src/modules/favorites/favorites.service.ts`
-- [X] T068 [US4] Implement `GET/PUT /v1/preferences` in `apps/api/src/modules/preferences/preferences.controller.ts`
-- [X] T069 [US4] Implement `GET/PUT /v1/favorites` in `apps/api/src/modules/favorites/favorites.controller.ts`
-- [X] T070 [US4] Implement sync queue enqueue/dequeue in `apps/mobile/src/services/sync/syncQueue.ts`
-- [X] T071 [US4] Implement connectivity listener and background sync worker in `apps/mobile/src/services/sync/syncWorker.ts`
-- [X] T072 [US4] Implement LWW merge using `server_received_at` in `apps/mobile/src/services/sync/lwwMerge.ts`
-- [X] T073 [US4] Migrate local favorites to synced model in `apps/mobile/src/features/session/favoritesSync.ts`
-- [X] T074 [US4] Implement preferences pull on sign-in in `apps/mobile/src/features/settings/preferencesHydration.ts`
-- [X] T075 [US4] Implement remote config fetch/cache in `apps/api/src/modules/remote-config/remote-config.controller.ts` and mobile client `apps/mobile/src/services/api/remoteConfigApi.ts`
-- [X] T076 [US4] Block first-time sign-in when offline with explanatory UI in `apps/mobile/src/features/auth/OfflineSignInBlock.tsx`
+- [X] T070 [P] [US4] Implement preferences module service with LWW in `apps/api/src/modules/preferences/preferences.service.ts`
+- [X] T071 [P] [US4] Implement favorites module service in `apps/api/src/modules/favorites/favorites.service.ts`
+- [X] T072 [US4] Implement `GET/PUT /v1/preferences` in `apps/api/src/modules/preferences/preferences.controller.ts`
+- [X] T073 [US4] Implement `GET/PUT /v1/favorites` in `apps/api/src/modules/favorites/favorites.controller.ts`
+- [X] T074 [US4] Implement sync queue enqueue/dequeue in `apps/mobile/src/services/sync/syncQueue.ts`
+- [X] T075 [US4] Implement connectivity listener and background sync worker in `apps/mobile/src/services/sync/syncWorker.ts`
+- [X] T076 [US4] Implement LWW merge using `server_received_at` in `apps/mobile/src/services/sync/lwwMerge.ts`
+- [ ] T077 [US4] Move sign-in UI to Settings in `apps/mobile/src/features/settings/SignInSetting.tsx` (remove as entry gate)
+- [ ] T078 [US4] Implement first-sign-in discard warning dialog in `apps/mobile/src/features/auth/SignInDiscardWarning.tsx` per FR-035
+- [ ] T079 [US4] Discard local favorites/preferences on first sign-in in `apps/mobile/src/features/auth/signInFlow.ts`
+- [ ] T080 [US4] Remove offline sign-in block component `apps/mobile/src/features/auth/OfflineSignInBlock.tsx` from default flows
+- [ ] T081 [US4] Migrate local favorites to synced model only after sign-in in `apps/mobile/src/features/session/favoritesSync.ts`
+- [ ] T082 [US4] Implement preferences pull on sign-in in `apps/mobile/src/features/settings/preferencesHydration.ts`
+- [ ] T083 [US4] Implement remote config fetch/cache with bundled fallback in `apps/mobile/src/services/api/remoteConfigApi.ts`
+- [X] T084 [US4] Implement remote config fetch endpoint in `apps/api/src/modules/remote-config/remote-config.controller.ts`
 
-**Checkpoint**: Preferences and favorites sync across devices with LWW conflict resolution
+**Checkpoint**: Optional sign-in from Settings with discard-local policy and sync when online
 
 ---
 
 ## Phase 7: User Story 5 — Personalization, Feedback, and Habit Building (Priority: P5)
 
-**Goal**: EN/PT localization, theme control, session feedback for suggestion improvement
+**Goal**: EN/PT localization, theme control, session feedback stored locally; server upload optional when signed in
 
-**Independent Test**: Switch language and theme → submit session feedback → verify API payload (quickstart Scenarios 8–9)
+**Independent Test**: Switch language and theme unsigned → submit session feedback → verify local storage (quickstart Scenarios 8–9)
 
 ### Implementation for User Story 5
 
-- [X] T077 [P] [US5] Configure i18next with English locale in `apps/mobile/src/i18n/locales/en.json`
-- [X] T078 [P] [US5] Add Portuguese locale in `apps/mobile/src/i18n/locales/pt.json`
-- [X] T079 [US5] Wire i18n provider and language switcher in `apps/mobile/src/i18n/index.ts` and `apps/mobile/src/features/settings/LanguageSetting.tsx`
-- [X] T080 [P] [US5] Implement theme tokens and provider in `apps/mobile/src/theme/ThemeProvider.tsx`
-- [X] T081 [US5] Implement appearance settings (light/dark/system) in `apps/mobile/src/features/settings/AppearanceSetting.tsx`
-- [X] T082 [US5] Persist theme/language preferences to local storage and sync queue in `apps/mobile/src/features/settings/preferencesLocal.ts`
-- [X] T083 [US5] Implement session helpfulness feedback UI in `apps/mobile/src/features/feedback/SessionFeedbackModal.tsx`
-- [X] T084 [US5] Implement `POST /v1/feedback/session` in `apps/api/src/modules/feedback/feedback.controller.ts`
-- [X] T085 [US5] Store feedback records in Prisma in `apps/api/src/modules/feedback/feedback.service.ts`
-- [X] T086 [US5] Link feedback to session context metadata in `apps/mobile/src/features/feedback/submitFeedback.ts`
+- [X] T085 [P] [US5] Configure i18next with English locale in `apps/mobile/src/i18n/locales/en.json`
+- [X] T086 [P] [US5] Add Portuguese locale in `apps/mobile/src/i18n/locales/pt.json`
+- [X] T087 [US5] Wire i18n provider and language switcher in `apps/mobile/src/i18n/index.ts` and `apps/mobile/src/features/settings/LanguageSetting.tsx`
+- [X] T088 [P] [US5] Implement theme tokens and provider in `apps/mobile/src/theme/ThemeProvider.tsx`
+- [X] T089 [US5] Implement appearance settings (light/dark/system) in `apps/mobile/src/features/settings/AppearanceSetting.tsx`
+- [X] T090 [US5] Persist theme/language preferences to local storage and sync queue in `apps/mobile/src/features/settings/preferencesLocal.ts`
+- [X] T091 [US5] Implement session helpfulness feedback UI in `apps/mobile/src/features/feedback/SessionFeedbackModal.tsx`
+- [X] T092 [US5] Implement `POST /v1/feedback/session` in `apps/api/src/modules/feedback/feedback.controller.ts`
+- [X] T093 [US5] Store feedback records in Prisma in `apps/api/src/modules/feedback/feedback.service.ts`
+- [ ] T094 [US5] Store feedback locally when unsigned; upload via sync queue only when signed in in `apps/mobile/src/features/feedback/submitFeedback.ts`
 
-**Checkpoint**: Personalization and feedback loop complete
+**Checkpoint**: Personalization and local feedback loop complete without sign-in
 
 ---
 
@@ -186,14 +196,15 @@
 
 **Purpose**: Opt-in features, hardening, and end-to-end validation
 
-- [X] T087 [P] Implement `POST /v1/features/acoustic` with consent guard in `apps/api/src/modules/features/features.controller.ts`
-- [X] T088 Implement opt-in acoustic feature upload client in `apps/mobile/src/services/sync/featureUpload.ts`
-- [X] T089 [P] Add experiment assignment foundation in `apps/api/src/modules/remote-config/experiments.service.ts`
-- [X] T090 Implement session restore after unexpected app termination in `apps/mobile/src/features/session/sessionRestore.ts`
-- [X] T091 Implement timer-expired background notification in `apps/mobile/src/features/session/timerNotification.ts`
-- [X] T092 [P] Add API request logging and error filter in `apps/api/src/common/filters/http-exception.filter.ts`
-- [X] T093 [P] Add mobile global error boundary in `apps/mobile/src/components/ErrorBoundary.tsx`
-- [X] T094 Validate quickstart scenarios and document results in `specs/001-noise-shield-mvp/quickstart-results.md`
+- [X] T095 [P] Implement `POST /v1/features/acoustic` with consent guard in `apps/api/src/modules/features/features.controller.ts`
+- [X] T096 Implement opt-in acoustic feature upload client in `apps/mobile/src/services/sync/featureUpload.ts`
+- [X] T097 [P] Add experiment assignment foundation in `apps/api/src/modules/remote-config/experiments.service.ts`
+- [X] T098 Implement session restore after unexpected app termination in `apps/mobile/src/features/session/sessionRestore.ts`
+- [X] T099 Implement timer-expired background notification in `apps/mobile/src/features/session/timerNotification.ts`
+- [X] T100 [P] Add API request logging and error filter in `apps/api/src/common/filters/http-exception.filter.ts`
+- [X] T101 [P] Add mobile global error boundary in `apps/mobile/src/components/ErrorBoundary.tsx`
+- [ ] T102 Validate quickstart scenarios for unsigned offline flows in `specs/001-noise-shield-mvp/quickstart-results.md`
+- [ ] T103 [P] Update `specs/001-noise-shield-mvp/plan.md` constraints to reflect optional auth (FR-024 superseded)
 
 ---
 
@@ -201,8 +212,8 @@
 
 ### Phase Dependencies
 
-- **Setup (Phase 1)**: No dependencies — start immediately
-- **Foundational (Phase 2)**: Depends on Setup — **blocks all user stories**
+- **Setup (Phase 1)**: No dependencies — complete ✅
+- **Foundational (Phase 2)**: Depends on Setup — **blocks all user stories**; T024–T025, T028–T029 remain
 - **User Stories (Phases 3–7)**: Depend on Foundational completion
 - **Polish (Phase 8)**: Depends on desired user stories being complete
 
@@ -210,56 +221,43 @@
 
 | Story | Depends on | Notes |
 |-------|------------|-------|
-| US1 (P1) | Foundational | Requires auth gate from Phase 2; no mic/analysis required |
-| US2 (P2) | US1 session shell | Adds onboarding/permission layers atop session entry |
-| US3 (P3) | US1, US2 mic grant path | Analysis attaches to active session lifecycle |
-| US4 (P4) | Foundational auth | Sync extends US1 favorites and settings; can parallel US3 after US1 |
-| US5 (P5) | US1 sessions | Feedback attaches to session end; i18n/theme can start after Foundational |
+| US1 (P1) | Foundational T024–T025 | No sign-in or mic required for basic masking |
+| US2 (P2) | US1 session shell | Skippable onboarding + sign-in-only consent |
+| US3 (P3) | US1, US2 mic grant path | Bundled defaults when unsigned/offline |
+| US4 (P4) | Foundational | Optional Settings sign-in; discard-local on first sign-in |
+| US5 (P5) | US1 sessions | Local feedback; server upload when signed in |
 
 ### Within Each User Story
 
-- Shared types/catalog before feature wiring
-- Services before screens
-- API modules before mobile sync clients (US4)
-- Analysis package before auto-apply UI (US3)
+- Bundled defaults before auto-apply wiring (US3)
+- Remove auth gate before unsigned session validation (US1)
+- Sign-in discard warning before sync migration (US4)
 
 ### Parallel Opportunities
 
-- **Phase 1**: T002–T005, T007–T008 in parallel
-- **Phase 2**: T012–T014, T021, T026–T027 in parallel; API auth (T016–T19) parallel with mobile auth (T022–T025) after T015
-- **US1**: T028–T029 in parallel
-- **US2**: T043, T051–T052 can overlap after T050 contract defined
-- **US3**: T054–T057 in parallel
-- **US4**: T066–T067 in parallel
-- **US5**: T077–T078, T080 in parallel
-- **Polish**: T087, T089, T092–T093 in parallel
+- **Phase 2**: T028–T029 in parallel after T024–T025
+- **US1**: T030–T031 already done; T042–T045 sequential
+- **US2**: T046–T056; T047 and T052 parallel after T025
+- **US3**: T057–T061 parallel; T068 after T028–T029
+- **US4**: T070–T071 parallel; T077–T083 mostly sequential
+- **US5**: T085–T088 parallel
+- **Polish**: T102–T103 parallel
 
 ---
 
-## Parallel Example: User Story 1
+## Parallel Example: Remaining Critical Path (optional auth)
 
 ```bash
-# Parallel asset and state setup:
-T028: Bundle masking audio assets in apps/mobile/assets/audio/
-T029: Implement session state machine in apps/mobile/src/features/session/sessionStateMachine.ts
+# Unblock unsigned access first:
+T024: Refactor root navigation in apps/mobile/app/index.tsx
+T025: Remove mandatory auth gate in apps/mobile/src/features/auth/AuthGate.tsx
 
-# Then sequential wiring:
-T030 → T031 → T032 → T035–T042
-```
+# Bundled defaults (parallel):
+T028: packages/shared/src/config/defaults.ts
+T029: apps/mobile/src/services/config/bundledDefaults.ts
 
----
-
-## Parallel Example: User Story 3
-
-```bash
-# Parallel analysis core:
-T054: FakeAudioAnalysisPort in packages/audio-analysis/src/fakeAudioAnalysisPort.ts
-T055: MicCaptureAdapter in packages/audio-analysis/src/capture/MicCaptureAdapter.ts
-T056: levelEstimator in packages/audio-analysis/src/analysis/levelEstimator.ts
-T057: profileClassifier in packages/audio-analysis/src/analysis/profileClassifier.ts
-
-# Integration:
-T058 → T059 → T060–T064
+# Then US4 sign-in flow:
+T077 → T078 → T079 → T081 → T082
 ```
 
 ---
@@ -268,36 +266,36 @@ T058 → T059 → T060–T064
 
 ### MVP First (User Story 1 Only)
 
-1. Complete Phase 1: Setup
-2. Complete Phase 2: Foundational (CRITICAL)
-3. Complete Phase 3: User Story 1
-4. **STOP and VALIDATE** against quickstart Scenarios 1–3
-5. Demo offline masking with background playback
+1. Complete Phase 2 remaining: T024, T025, T028, T029
+2. Complete Phase 3 remaining: T042, T045
+3. **STOP and VALIDATE** against quickstart Scenarios 1–3 (unsigned + offline)
+4. Demo offline masking without sign-in
 
 ### Incremental Delivery
 
-1. Setup + Foundational → authenticated app shell
-2. US1 → offline masking MVP
-3. US2 → trust, permissions, consent
-4. US3 → adaptive differentiation
-5. US4 → multi-device continuity
-6. US5 → polish and feedback loop
-7. Polish → opt-in features and full quickstart pass
+1. Phase 2 delta → unsigned app shell
+2. US1 delta → offline masking MVP without auth
+3. US2 → skippable onboarding + sign-in-only consent
+4. US3 → bundled-default analysis
+5. US4 → optional Settings sign-in + discard-local
+6. US5 → local feedback polish
+7. Polish → full quickstart pass
 
 ### Suggested MVP Scope
 
-**Minimum shippable slice**: Phase 1 + Phase 2 + Phase 3 (US1) — 42 tasks (T001–T042)
+**Minimum shippable slice**: Phase 2 delta (T024–T025, T028–T029) + US1 delta (T042, T045) — **6 open tasks**
 
-Delivers: sign-in, onboarding deferred, core masking with background audio, offline playback, timer, volume, local favorites.
+Delivers: unsigned offline masking with background audio, timer, volume, local favorites.
 
-**Recommended beta slice**: Through US2 + US3 — adds privacy UX and adaptive masking.
+**Recommended beta slice**: Above + US2 (T047, T052) + US4 sign-in flow (T077–T079) — adds trust UX and optional sync.
 
 ---
 
 ## Notes
 
-- All tasks include concrete file paths for LLM execution
-- Auth lives in Foundational (not US4) because FR-024 blocks sessions until sign-in
-- US4 focuses on sync and multi-device behavior beyond minimal auth
+- Tasks marked `[X]` reflect existing implementation from initial build
+- Tasks marked `[ ]` are spec deltas from optional-auth revision and clarify session
+- Auth is optional — never block session routes on sign-in state
+- First sign-in MUST warn and discard local favorites/preferences (FR-035)
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independence per `quickstart.md`
