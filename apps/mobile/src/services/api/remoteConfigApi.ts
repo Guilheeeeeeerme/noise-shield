@@ -1,18 +1,20 @@
 import { api } from './client';
-import { setString, getString } from '../storage/mmkv';
+import { getString, STORAGE_KEYS } from '../storage/mmkv';
+import { cacheRemoteConfig, getAnalysisTuning } from '../config/bundledDefaults';
+import type { AnalysisTuningConfig } from '@noise-shield/shared';
 
-const CACHE_KEY = 'remote_config_cache';
+export type { AnalysisTuningConfig };
 
-export const remoteConfigApi = {
-  async fetchAndCache() {
+/** Fetch remote config when signed in; fall back to bundled defaults. */
+export async function fetchRemoteConfigIfEligible(): Promise<AnalysisTuningConfig> {
+  const token = getString(STORAGE_KEYS.ACCESS_TOKEN);
+  if (!token) return getAnalysisTuning();
+
+  try {
     const config = await api.getRemoteConfig();
-    setString(CACHE_KEY, JSON.stringify(config));
-    return config;
-  },
-
-  getCached() {
-    const raw = getString(CACHE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  },
-};
+    cacheRemoteConfig(config.payload);
+    return getAnalysisTuning();
+  } catch {
+    return getAnalysisTuning();
+  }
+}

@@ -34,9 +34,11 @@ Technical approach: **pnpm monorepo** with `apps/mobile` (Expo prebuild + RNTP),
 - Preference sync ≤ 5 min after reconnect (SC-003)
 
 **Constraints**:
-- Core session works offline after initial sign-in (FR-012, FR-013)
+- Core session works offline without sign-in or network (FR-012, FR-013, FR-032, FR-033)
 - No raw audio upload by default (FR-015)
-- Sign-in required before any session (FR-024, clarification Q1)
+- Sign-in optional; available from Settings only (FR-024 superseded, FR-033)
+- Bundled analysis defaults when unsigned or offline; remote config overrides when signed in and online (FR-034)
+- First sign-in discards local favorites/preferences with user warning (FR-035)
 - Continuous auto-apply with smooth crossfade (FR-029, FR-030)
 - English for dev artifacts; EN/PT user-facing (FR-017)
 
@@ -176,8 +178,8 @@ Completed — see [research.md](./research.md). All technical unknowns resolved;
 
 ### Phase C — Mobile shell
 - Expo prebuild, navigation, theme system, i18n EN/PT
-- Auth flow (required gate), onboarding, consent modal
-- Settings (theme, language, consent toggle)
+- Optional auth (Settings-only sign-in), skippable onboarding, sign-in-only consent modal
+- Settings (theme, language, consent toggle, account)
 
 ### Phase D — Session core
 - Session state machine (data-model transitions)

@@ -11,6 +11,11 @@ export const PRIVACY_COPY = {
       'Microphone access denied. You can still play masking sounds manually.',
     offlineSignInBlock:
       'Sign-in requires an internet connection the first time. Connect and try again.',
+    signInDiscardTitle: 'Sign in and sync?',
+    signInDiscardBody:
+      'Your local favorites and preferences on this device will be replaced by your account data from the server.',
+    signInDiscardConfirm: 'Sign in',
+    signInDiscardCancel: 'Cancel',
     sessionDisclaimer: 'Masking reduces perceived noise; it does not cancel sound.',
   },
   pt: {
@@ -25,6 +30,11 @@ export const PRIVACY_COPY = {
       'Acesso ao microfone negado. Você ainda pode reproduzir sons de mascaramento manualmente.',
     offlineSignInBlock:
       'O login requer conexão com a internet na primeira vez. Conecte-se e tente novamente.',
+    signInDiscardTitle: 'Entrar e sincronizar?',
+    signInDiscardBody:
+      'Seus favoritos e preferências locais neste dispositivo serão substituídos pelos dados da sua conta no servidor.',
+    signInDiscardConfirm: 'Entrar',
+    signInDiscardCancel: 'Cancelar',
     sessionDisclaimer:
       'O mascaramento reduz o ruído percebido; não cancela o som.',
   },

@@ -51,14 +51,14 @@
 - [X] T021 [P] Setup Expo Router navigation shell in `apps/mobile/app/_layout.tsx` and `apps/mobile/app/index.tsx`
 - [X] T022 Implement auth store with secure token persistence in `apps/mobile/src/stores/authStore.ts`
 - [X] T023 Implement typed API client in `apps/mobile/src/services/api/client.ts`
-- [ ] T024 Refactor root navigation in `apps/mobile/app/index.tsx` to route unsigned users directly to session (no sign-in redirect)
-- [ ] T025 Remove mandatory auth gate in `apps/mobile/src/features/auth/AuthGate.tsx`; allow unsigned access to all core routes
+- [X] T024 Refactor root navigation in `apps/mobile/app/index.tsx` to route unsigned users directly to session (no sign-in redirect)
+- [X] T025 Remove mandatory auth gate in `apps/mobile/src/features/auth/AuthGate.tsx`; allow unsigned access to all core routes
 - [X] T026 [P] Configure MMKV storage wrapper in `apps/mobile/src/services/storage/mmkv.ts`
 - [X] T027 [P] Configure SQLite sync queue schema in `apps/mobile/src/services/sync/schema.sql`
-- [ ] T028 [P] Add bundled default analysis tuning constants in `packages/shared/src/config/defaults.ts` per FR-034
-- [ ] T029 Wire bundled defaults fallback in `apps/mobile/src/services/config/bundledDefaults.ts`
+- [X] T028 [P] Add bundled default analysis tuning constants in `packages/shared/src/config/defaults.ts` per FR-034
+- [X] T029 Wire bundled defaults fallback in `apps/mobile/src/services/config/bundledDefaults.ts`
 
-**Checkpoint**: Foundation ready — unsigned users can reach session; optional API auth online
+**Checkpoint**: Foundation ready — unsigned users can reach session; optional API auth online ✅
 
 ---
 
@@ -82,10 +82,10 @@
 - [X] T039 [US1] Implement volume slider control in `apps/mobile/src/features/session/VolumeControl.tsx`
 - [X] T040 [US1] Implement session timer picker and expiry handler in `apps/mobile/src/features/session/TimerControl.tsx`
 - [X] T041 [US1] Implement local favorites persistence (device-only) in `apps/mobile/src/features/session/favoritesLocal.ts`
-- [ ] T042 [US1] Verify offline unsigned session path makes zero API calls in `apps/mobile/src/features/session/startSession.ts`
+- [X] T042 [US1] Verify offline unsigned session path makes zero API calls in `apps/mobile/src/features/session/startSession.ts`
 - [X] T043 [US1] Implement session-ended feedback UI state in `apps/mobile/src/features/session/SessionEndedBanner.tsx`
 - [X] T044 [US1] Handle audio focus interruptions (calls/other apps) in `apps/mobile/src/services/playback/audioFocus.ts`
-- [ ] T045 [US1] Remove sign-in prompts from session flow; ensure `apps/mobile/app/(auth)/sign-in.tsx` is not auto-routed
+- [X] T045 [US1] Remove sign-in prompts from session flow; ensure `apps/mobile/app/(auth)/sign-in.tsx` is not auto-routed
 
 **Checkpoint**: User Story 1 fully functional — core masking works offline without sign-in
 
@@ -100,12 +100,12 @@
 ### Implementation for User Story 2
 
 - [X] T046 [P] [US2] Create onboarding slide content component in `apps/mobile/src/features/onboarding/OnboardingSlides.tsx`
-- [ ] T047 [US2] Add skip control and Settings re-entry in `apps/mobile/app/(onboarding)/index.tsx` and `apps/mobile/src/features/settings/OnboardingSetting.tsx`
+- [X] T047 [US2] Add skip control and Settings re-entry in `apps/mobile/app/(onboarding)/index.tsx` and `apps/mobile/src/features/settings/OnboardingSetting.tsx`
 - [X] T048 [US2] Implement microphone permission rationale screen in `apps/mobile/src/features/onboarding/MicPermissionScreen.tsx`
 - [X] T049 [US2] Integrate platform mic permission request via Expo AV in `apps/mobile/src/services/permissions/microphone.ts`
 - [X] T050 [US2] Implement limited/manual mode banner and gating in `apps/mobile/src/features/session/LimitedModeBanner.tsx`
 - [X] T051 [US2] Disable analysis hooks when mic denied in `apps/mobile/src/features/session/sessionController.ts`
-- [ ] T052 [US2] Gate data consent modal to signed-in users only in `apps/mobile/src/features/onboarding/DataConsentModal.tsx`
+- [X] T052 [US2] Gate data consent modal to signed-in users only in `apps/mobile/src/features/onboarding/DataConsentModal.tsx`
 - [X] T053 [US2] Implement consent API client methods in `apps/mobile/src/services/api/consentApi.ts`
 - [X] T054 [US2] Implement `GET/PUT /v1/consent` in `apps/api/src/modules/consent/consent.controller.ts` and service
 - [X] T055 [US2] Persist consent record in Prisma and enforce opt-in flag in `apps/api/src/modules/consent/consent.service.ts`
@@ -134,7 +134,7 @@
 - [X] T065 [US3] Implement crossfade transition in `apps/mobile/src/services/playback/crossfade.ts`
 - [X] T066 [US3] Implement manual override precedence rules in `apps/mobile/src/features/analysis/manualOverride.ts`
 - [X] T067 [US3] Implement quiet-environment and permission-revoked edge handling in `apps/mobile/src/features/analysis/edgeCases.ts`
-- [ ] T068 [US3] Load bundled defaults in `apps/mobile/src/features/analysis/autoApply.ts` when unsigned or offline
+- [X] T068 [US3] Load bundled defaults in `apps/mobile/src/features/analysis/autoApply.ts` when unsigned or offline
 - [X] T069 [US3] Seed remote config defaults for thresholds in `apps/api/prisma/seed.ts`
 
 **Checkpoint**: Adaptive analysis operational on-device with bundled-default fallback
@@ -156,13 +156,13 @@
 - [X] T074 [US4] Implement sync queue enqueue/dequeue in `apps/mobile/src/services/sync/syncQueue.ts`
 - [X] T075 [US4] Implement connectivity listener and background sync worker in `apps/mobile/src/services/sync/syncWorker.ts`
 - [X] T076 [US4] Implement LWW merge using `server_received_at` in `apps/mobile/src/services/sync/lwwMerge.ts`
-- [ ] T077 [US4] Move sign-in UI to Settings in `apps/mobile/src/features/settings/SignInSetting.tsx` (remove as entry gate)
-- [ ] T078 [US4] Implement first-sign-in discard warning dialog in `apps/mobile/src/features/auth/SignInDiscardWarning.tsx` per FR-035
-- [ ] T079 [US4] Discard local favorites/preferences on first sign-in in `apps/mobile/src/features/auth/signInFlow.ts`
-- [ ] T080 [US4] Remove offline sign-in block component `apps/mobile/src/features/auth/OfflineSignInBlock.tsx` from default flows
-- [ ] T081 [US4] Migrate local favorites to synced model only after sign-in in `apps/mobile/src/features/session/favoritesSync.ts`
-- [ ] T082 [US4] Implement preferences pull on sign-in in `apps/mobile/src/features/settings/preferencesHydration.ts`
-- [ ] T083 [US4] Implement remote config fetch/cache with bundled fallback in `apps/mobile/src/services/api/remoteConfigApi.ts`
+- [X] T077 [US4] Move sign-in UI to Settings in `apps/mobile/src/features/settings/SignInSetting.tsx` (remove as entry gate)
+- [X] T078 [US4] Implement first-sign-in discard warning dialog in `apps/mobile/src/features/auth/SignInDiscardWarning.tsx` per FR-035
+- [X] T079 [US4] Discard local favorites/preferences on first sign-in in `apps/mobile/src/features/auth/signInFlow.ts`
+- [X] T080 [US4] Remove offline sign-in block component `apps/mobile/src/features/auth/OfflineSignInBlock.tsx` from default flows
+- [X] T081 [US4] Migrate local favorites to synced model only after sign-in in `apps/mobile/src/features/session/favoritesSync.ts`
+- [X] T082 [US4] Implement preferences pull on sign-in in `apps/mobile/src/features/settings/preferencesHydration.ts`
+- [X] T083 [US4] Implement remote config fetch/cache with bundled fallback in `apps/mobile/src/services/api/remoteConfigApi.ts`
 - [X] T084 [US4] Implement remote config fetch endpoint in `apps/api/src/modules/remote-config/remote-config.controller.ts`
 
 **Checkpoint**: Optional sign-in from Settings with discard-local policy and sync when online
@@ -186,7 +186,7 @@
 - [X] T091 [US5] Implement session helpfulness feedback UI in `apps/mobile/src/features/feedback/SessionFeedbackModal.tsx`
 - [X] T092 [US5] Implement `POST /v1/feedback/session` in `apps/api/src/modules/feedback/feedback.controller.ts`
 - [X] T093 [US5] Store feedback records in Prisma in `apps/api/src/modules/feedback/feedback.service.ts`
-- [ ] T094 [US5] Store feedback locally when unsigned; upload via sync queue only when signed in in `apps/mobile/src/features/feedback/submitFeedback.ts`
+- [X] T094 [US5] Store feedback locally when unsigned; upload via sync queue only when signed in in `apps/mobile/src/features/feedback/submitFeedback.ts`
 
 **Checkpoint**: Personalization and local feedback loop complete without sign-in
 
@@ -203,8 +203,8 @@
 - [X] T099 Implement timer-expired background notification in `apps/mobile/src/features/session/timerNotification.ts`
 - [X] T100 [P] Add API request logging and error filter in `apps/api/src/common/filters/http-exception.filter.ts`
 - [X] T101 [P] Add mobile global error boundary in `apps/mobile/src/components/ErrorBoundary.tsx`
-- [ ] T102 Validate quickstart scenarios for unsigned offline flows in `specs/001-noise-shield-mvp/quickstart-results.md`
-- [ ] T103 [P] Update `specs/001-noise-shield-mvp/plan.md` constraints to reflect optional auth (FR-024 superseded)
+- [X] T102 Validate quickstart scenarios for unsigned offline flows in `specs/001-noise-shield-mvp/quickstart-results.md`
+- [X] T103 [P] Update `specs/001-noise-shield-mvp/plan.md` constraints to reflect optional auth (FR-024 superseded)
 
 ---
 
@@ -213,7 +213,7 @@
 ### Phase Dependencies
 
 - **Setup (Phase 1)**: No dependencies — complete ✅
-- **Foundational (Phase 2)**: Depends on Setup — **blocks all user stories**; T024–T025, T028–T029 remain
+- **Foundational (Phase 2)**: Depends on Setup — complete ✅
 - **User Stories (Phases 3–7)**: Depend on Foundational completion
 - **Polish (Phase 8)**: Depends on desired user stories being complete
 

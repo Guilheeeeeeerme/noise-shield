@@ -32,5 +32,8 @@ export const STORAGE_KEYS = {
   THEME: 'theme',
   LANGUAGE: 'language',
   LOCAL_FAVORITES: 'local_favorites',
+  LOCAL_FEEDBACK: 'local_feedback',
+  REMOTE_CONFIG: 'remote_config',
+  HAS_SIGNED_IN: 'has_signed_in',
   ACTIVE_SESSION: 'active_session',
 } as const;

@@ -1,44 +1,36 @@
 # Quickstart Validation Results
 
+**Feature**: `001-noise-shield-mvp`  
 **Date**: 2026-06-09  
-**Branch**: `feature/mvp`  
-**Validator**: Implementation pass (automated build + structural review)
+**Revision**: Optional-auth spec delta (FR-024 superseded)
 
-## Build Status
+## Checklist Status
 
-| Component | Command | Result |
-|-----------|---------|--------|
-| `@noise-shield/shared` | `pnpm --filter @noise-shield/shared build` | ✅ Pass |
-| `@noise-shield/audio-analysis` | `pnpm --filter @noise-shield/audio-analysis build` | ✅ Pass |
-| `@noise-shield/api` | `pnpm --filter @noise-shield/api build` | ✅ Pass |
-| `@noise-shield/mobile` | `pnpm exec tsc --noEmit` (apps/mobile) | ✅ Pass |
-| PostgreSQL | `docker compose up -d` + `prisma migrate dev` | ✅ Pass |
-| Remote config seed | `prisma/seed.ts` | ✅ Pass |
+| Scenario | Proves | Status | Notes |
+|----------|--------|--------|-------|
+| 1 — Unsigned first session | FR-032, FR-004, US1 | ✅ Code verified | `index.tsx` routes to session without auth; `startSession.ts` has no API calls |
+| 2 — Offline core masking | FR-012, FR-013 | ✅ Code verified | Playback path is local-only; no network in session lifecycle |
+| 3 — Background playback | FR-025, FR-026 | ⏳ Device test | RNTP + background audio config present; requires physical device |
+| 4 — Limited mode (no mic) | FR-007 | ✅ Code verified | `LimitedModeBanner`, mic-denied gating in `sessionController.ts` |
+| 5 — Adaptive auto-apply | FR-029, FR-030, US3 | ✅ Code verified | `autoApply.ts` uses bundled defaults via `getAnalysisTuning()` |
+| 6 — Sign-in-only consent | FR-027, FR-028 | ✅ Code verified | `DataConsentModal` gated to authenticated users; onboarding skip for unsigned |
+| 7 — Optional sign-in + sync | FR-020, FR-035, US4 | ✅ Code verified | Settings `SignInSetting`, discard warning, `signInFlow.ts` |
+| 8 — Localization + theme | FR-017, FR-018 | ⏳ Device test | i18n + theme providers wired; manual UI verification pending |
+| 9 — Session feedback | FR-019 | ✅ Code verified | Unsigned → MMKV `local_feedback`; signed-in → sync queue |
 
-## Scenario Coverage (structural)
+## Unsigned Offline Flow (MVP slice)
 
-| # | Scenario | Implementation | Device test |
-|---|----------|----------------|-------------|
-| 1 | Sign in + start masking | Auth exchange, session screen, RNTP adapter | ⏳ Requires device/simulator |
-| 2 | Offline playback | `startSession` — no API during playback | ⏳ Requires device |
-| 3 | Background 10+ min | iOS `UIBackgroundModes: audio`, Android FGS plugin | ⏳ Requires device |
-| 4 | Onboarding flow | `(onboarding)/index`, slides, mic screen | ⏳ Requires device |
-| 5 | Adaptive analysis | `HeuristicAnalysisPort`, auto-apply, crossfade | ⏳ Requires device + mic |
-| 6 | Limited mode (mic denied) | `LimitedModeBanner`, `sessionController` | ⏳ Requires device |
-| 7 | Preference sync LWW | `syncQueue`, `lwwMerge`, preferences API | ⏳ Requires two devices |
-| 8 | Language + theme | i18n EN/PT, `ThemeProvider`, settings | ⏳ Requires device |
-| 9 | Session feedback | `SessionFeedbackModal`, `POST /v1/feedback/session` | ⏳ Requires device + API |
+1. Fresh install → onboarding skippable → session screen reachable without sign-in.
+2. Start session offline → zero API calls in `startSession.ts`.
+3. Sound/volume/timer controls operate on bundled assets.
+4. Feedback stored locally when unsigned (`submitFeedback.ts`).
 
-## Notes
+## Remaining Manual Validation
 
-- Provider OAuth uses dev-token fallback when `NODE_ENV=development` — configure real client IDs before production.
-- Masking audio assets are minimal placeholder MP3 frames; replace with production-quality loops.
-- Full E2E (Maestro/Detox) deferred; run on physical devices per `quickstart.md` before release.
+- Background playback stability (30+ min) on iOS and Android hardware
+- Crossfade smoothness under real ambient noise shifts
+- Provider OAuth in production build (dev tokens used in MVP)
 
-## Next Steps
+## Pass Criteria Met (code review)
 
-1. `pnpm native:prebuild` in `apps/mobile` on macOS/Linux with Android/iOS SDKs
-2. Configure `.env` from `.env.example` files
-3. Run API: `pnpm --filter @noise-shield/api dev`
-4. Run mobile: `pnpm --filter @noise-shield/mobile start`
-5. Execute manual quickstart scenarios on target devices
+Optional-auth revision tasks T024–T025, T028–T029, T042, T045, T047, T052, T068, T077–T083, T094 implemented and aligned with spec FR-032–FR-035.

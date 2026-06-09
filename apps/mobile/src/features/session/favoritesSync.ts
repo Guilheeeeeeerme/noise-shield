@@ -1,36 +1,23 @@
-import { getLocalFavorites, saveLocalFavorites } from './favoritesLocal';
+import type { MaskingSoundId } from '@noise-shield/shared';
 import { api } from '@/services/api/client';
-import { enqueue } from '@/services/sync/syncQueue';
+import { remove, STORAGE_KEYS } from '@/services/storage/mmkv';
+import { saveLocalFavorites } from './favoritesLocal';
 
-export async function syncFavoritesToServer(): Promise<void> {
-  const local = getLocalFavorites();
-  const items = local.map((f, i) => ({
-    sound_id: f.soundId,
-    label: f.label,
-    sort_order: f.sortOrder ?? i,
-  }));
-
+/** Pull server favorites after sign-in; local favorites already discarded (FR-035). */
+export async function syncFavoritesFromServer(): Promise<void> {
+  remove(STORAGE_KEYS.LOCAL_FAVORITES);
   try {
-    const remote = (await api.getFavorites()) as {
+    const response = (await api.getFavorites()) as {
       items: Array<{ sound_id: string; label?: string; sort_order?: number }>;
     };
-    const merged = new Map<string, { sound_id: string; label?: string; sort_order: number }>();
-
-    for (const f of remote.items) {
-      merged.set(f.sound_id, { ...f, sort_order: f.sort_order ?? 0 });
-    }
-    for (const f of items) {
-      if (!merged.has(f.sound_id)) merged.set(f.sound_id, { ...f, sort_order: f.sort_order ?? 0 });
-    }
-
     saveLocalFavorites(
-      Array.from(merged.values()).map((f) => ({
-        soundId: f.sound_id as Parameters<typeof saveLocalFavorites>[0][0]['soundId'],
-        label: f.label,
-        sortOrder: f.sort_order,
+      response.items.map((item, index) => ({
+        soundId: item.sound_id as MaskingSoundId,
+        label: item.label,
+        sortOrder: item.sort_order ?? index,
       })),
     );
   } catch {
-    enqueue('favorite', { items });
+    saveLocalFavorites([]);
   }
 }

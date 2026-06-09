@@ -7,6 +7,7 @@ import { DataConsentModal } from '@/features/onboarding/DataConsentModal';
 import { setOnboardingCompleted } from '@/features/onboarding/onboardingState';
 import { requestMicrophonePermission } from '@/services/permissions/microphone';
 import { useSessionStore } from '@/stores/sessionStore';
+import { useAuthStore } from '@/stores/authStore';
 
 const SLIDE_COUNT = 3;
 
@@ -18,6 +19,11 @@ export default function OnboardingScreen() {
   const setMicGranted = useSessionStore((s) => s.setMicGranted);
 
   const finish = () => {
+    setOnboardingCompleted(true);
+    router.replace('/(main)/session');
+  };
+
+  const handleSkip = () => {
     setOnboardingCompleted(true);
     router.replace('/(main)/session');
   };
@@ -38,7 +44,13 @@ export default function OnboardingScreen() {
       setMicGranted(false);
     }
     setShowMic(false);
-    setShowConsent(true);
+
+    const isAuthenticated = useAuthStore.getState().isAuthenticated;
+    if (isAuthenticated) {
+      setShowConsent(true);
+    } else {
+      finish();
+    }
   };
 
   if (showMic) {
@@ -52,6 +64,9 @@ export default function OnboardingScreen() {
         <Text style={styles.buttonText}>
           {slide < SLIDE_COUNT - 1 ? 'Next' : 'Continue'}
         </Text>
+      </Pressable>
+      <Pressable style={styles.skip} onPress={handleSkip}>
+        <Text style={styles.skipText}>Skip</Text>
       </Pressable>
       <DataConsentModal visible={showConsent} onComplete={finish} />
     </View>
@@ -74,4 +89,6 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  skip: { marginTop: 16, padding: 8 },
+  skipText: { color: '#94a3b8', fontSize: 15 },
 });

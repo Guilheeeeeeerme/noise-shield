@@ -2,22 +2,30 @@ import { Modal, View, Text, Pressable, StyleSheet } from 'react-native';
 import { CONSENT_POLICY_VERSION, PRIVACY_COPY } from '@noise-shield/shared';
 import { api } from '@/services/api/client';
 import { setBoolean, STORAGE_KEYS } from '@/services/storage/mmkv';
+import { useAuthStore } from '@/stores/authStore';
 
 interface Props {
   visible: boolean;
   onComplete: () => void;
 }
 
+/** FR-027 — consent prompt for signed-in users only. */
 export function DataConsentModal({ visible, onComplete }: Props) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
   const handleChoice = async (optIn: boolean) => {
     setBoolean(STORAGE_KEYS.CONSENT_SHOWN, true);
-    try {
-      await api.putConsent(optIn, CONSENT_POLICY_VERSION);
-    } catch {
-      // Offline — consent syncs later via queue
+    if (isAuthenticated) {
+      try {
+        await api.putConsent(optIn, CONSENT_POLICY_VERSION);
+      } catch {
+        // Offline — consent syncs later via queue
+      }
     }
     onComplete();
   };
+
+  if (!isAuthenticated) return null;
 
   return (
     <Modal visible={visible} transparent animationType="fade">
