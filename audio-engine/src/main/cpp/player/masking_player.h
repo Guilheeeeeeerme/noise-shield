@@ -38,6 +38,8 @@ public:
     void setSound(SoundId id, float crossfadeSeconds = 0.75f);
     void loadPcm16(
             SoundId id, const int16_t *samples, int32_t frameCount, int32_t sampleRate);
+    /** 0 = system default device. Reopens the stream when already open. */
+    void setPreferredDeviceId(int32_t deviceId);
     bool isRecovering() const { return recovering_.load(std::memory_order_acquire); }
     int32_t xRunCount();
     bool consumeRestartRequest() { return restartRequested_.exchange(false); }
@@ -90,6 +92,7 @@ private:
     std::atomic<bool> shuttingDown_{false};
     std::atomic<bool> recovering_{false};
     std::atomic<bool> cleanupPending_{false};
+    std::atomic<int32_t> preferredDeviceId_{0};
     std::atomic<int32_t> callbackCurrentSound_{static_cast<int32_t>(SoundId::WhiteNoise)};
     std::atomic<int32_t> callbackTargetSound_{static_cast<int32_t>(SoundId::WhiteNoise)};
 

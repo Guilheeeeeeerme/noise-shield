@@ -24,6 +24,8 @@ public:
     bool isRecovering() const { return recovering_.load(std::memory_order_acquire); }
     int32_t sampleRate() const { return sampleRate_.load(); }
     int32_t copyLatestWindow(float *dst, int32_t maxFrames) const;
+    /** 0 = system default device. Reopens the stream when capture is active. */
+    void setPreferredDeviceId(int32_t deviceId);
 
     oboe::DataCallbackResult onAudioReady(
             oboe::AudioStream *stream, void *audioData, int32_t numFrames) override;
@@ -45,6 +47,7 @@ private:
     std::atomic<bool> desiredRunning_{false};
     std::atomic<bool> shuttingDown_{false};
     std::atomic<bool> recovering_{false};
+    std::atomic<int32_t> preferredDeviceId_{0};
 };
 
 }  // namespace noise

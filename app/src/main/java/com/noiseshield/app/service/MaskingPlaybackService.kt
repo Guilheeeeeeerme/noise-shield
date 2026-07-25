@@ -10,6 +10,7 @@ import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionCommands
 import androidx.media3.session.SessionResult
+import com.noiseshield.app.data.CoverState
 import com.noiseshield.app.data.MaskingSoundId
 import com.noiseshield.app.data.NoiseAnalysis
 import com.google.common.util.concurrent.Futures
@@ -20,6 +21,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.log10
+import kotlin.math.min
 
 class MaskingPlaybackService : MediaSessionService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -41,8 +44,22 @@ class MaskingPlaybackService : MediaSessionService() {
     private var breakReminderSent = false
     private var smoothedAmbientScale = 1f
     private var hasAmbientScale = false
+    private var coveredLatched = false
+    private var ambientTargetScale = 1f
+    private var preferredInputDeviceId = 0
+    private var preferredOutputDeviceId = 0
     private val stopPausedService = Runnable {
         if (!player.playWhenReady) stopSelf()
+    }
+    private val envelopeTick = object : Runnable {
+        override fun run() {
+            if (!hasAmbientScale || !player.playWhenReady) return
+            val target = ambientTargetScale
+            val alpha = if (target > smoothedAmbientScale) ATTACK_ALPHA else RELEASE_ALPHA
+            smoothedAmbientScale += alpha * (target - smoothedAmbientScale)
+            player.setAmbientScale(smoothedAmbientScale)
+            handler.postDelayed(this, ENVELOPE_TICK_MS)
+        }
     }
 
     private val timerTick = object : Runnable {
@@ -123,16 +140,21 @@ class MaskingPlaybackService : MediaSessionService() {
                 handler.post {
                     if (!uiForeground || !player.playWhenReady) return@post
                     latestAnalysis = analysis
-                    val intensity = applyAmbientIntensity(analysis.relativeDbfs)
-                    maybeAdapt(analysis)
+                    val scored = scoreResidual(analysis, player.currentSound)
+                    latestAnalysis = scored
+                    val intensity = applyAmbientIntensity(scored)
+                    maybeAdapt(scored)
                     val args = Bundle().apply {
-                        putFloat(ARG_RELATIVE_DBFS, analysis.relativeDbfs)
-                        putInt(ARG_LEVEL_BUCKET, analysis.levelBucket.ordinal)
-                        putString(ARG_SOUND_ID, analysis.suggestedSoundId.name)
-                        putFloat(ARG_CONFIDENCE, analysis.confidence)
-                        putFloatArray(ARG_MEL_ENERGIES, analysis.melBandEnergies.toFloatArray())
-                        putLong(ARG_CAPTURED_AT, analysis.capturedAtElapsedRealtime)
+                        putFloat(ARG_RELATIVE_DBFS, scored.relativeDbfs)
+                        putInt(ARG_LEVEL_BUCKET, scored.levelBucket.ordinal)
+                        putString(ARG_SOUND_ID, scored.suggestedSoundId.name)
+                        putFloat(ARG_CONFIDENCE, scored.confidence)
+                        putFloatArray(ARG_MEL_ENERGIES, scored.melBandEnergies.toFloatArray())
+                        putLong(ARG_CAPTURED_AT, scored.capturedAtElapsedRealtime)
                         putFloat(ARG_MASK_INTENSITY, intensity)
+                        putFloat(ARG_SELF_MATCH, scored.selfMatch)
+                        putFloat(ARG_RESIDUAL_DBFS, scored.residualDbfs)
+                        putInt(ARG_COVER_STATE, scored.coverState.ordinal)
                     }
                     session.broadcastCustomCommand(
                         SessionCommand(COMMAND_ANALYSIS_EVENT, Bundle.EMPTY),
@@ -154,6 +176,7 @@ class MaskingPlaybackService : MediaSessionService() {
     override fun onDestroy() {
         handler.removeCallbacks(timerTick)
         handler.removeCallbacks(breakReminderTick)
+        handler.removeCallbacks(envelopeTick)
         handler.removeCallbacksAndMessages(null)
         player.stopCapture()
         session.release()
@@ -171,6 +194,7 @@ class MaskingPlaybackService : MediaSessionService() {
                 .add(SessionCommand(COMMAND_SET_TIMER, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_SET_ADAPTIVE_MODE, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_SET_UI_FOREGROUND, Bundle.EMPTY))
+                .add(SessionCommand(COMMAND_SET_AUDIO_DEVICES, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_ANALYSIS_EVENT, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_TIMER_EVENT, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_BREAK_REMINDER, Bundle.EMPTY))
@@ -213,6 +237,11 @@ class MaskingPlaybackService : MediaSessionService() {
                         resetAmbientIntensity()
                     }
                 }
+                COMMAND_SET_AUDIO_DEVICES -> {
+                    preferredInputDeviceId = args.getInt(ARG_INPUT_DEVICE_ID, 0)
+                    preferredOutputDeviceId = args.getInt(ARG_OUTPUT_DEVICE_ID, 0)
+                    player.setPreferredDevices(preferredInputDeviceId, preferredOutputDeviceId)
+                }
                 COMMAND_GET_AUDIO_METRICS -> {
                     val metrics = Bundle().apply { putInt(ARG_XRUN_COUNT, player.xRunCount()) }
                     return Futures.immediateFuture(
@@ -247,25 +276,68 @@ class MaskingPlaybackService : MediaSessionService() {
     }
 
     /**
-     * Maps relative dBFS to mask intensity under the user volume ceiling.
-     * Quiet rooms duck near silence; louder rooms approach full slider.
+     * Maps residual (non-mask) dBFS to mask intensity under the user volume ceiling.
+     * Fast attack / slow release via a 250 ms envelope tick; Covered holds against raising.
      */
-    private fun applyAmbientIntensity(relativeDbfs: Float): Float {
-        val target = dbfsToAmbientScale(relativeDbfs)
+    private fun applyAmbientIntensity(analysis: NoiseAnalysis): Float {
+        var target = dbfsToAmbientScale(analysis.residualDbfs)
+        if (analysis.coverState == CoverState.COVERED || coveredLatched) {
+            coveredLatched = analysis.selfMatch >= COVERED_EXIT_SELF_MATCH &&
+                analysis.residualDbfs <= COVERED_EXIT_RESIDUAL_DBFS
+            if (coveredLatched) {
+                target = min(target, smoothedAmbientScale)
+            }
+        }
+        ambientTargetScale = target
         if (!hasAmbientScale) {
             smoothedAmbientScale = target
             hasAmbientScale = true
-        } else {
-            smoothedAmbientScale += AMBIENT_EMA_ALPHA * (target - smoothedAmbientScale)
+            player.setAmbientScale(smoothedAmbientScale)
+            handler.removeCallbacks(envelopeTick)
+            handler.post(envelopeTick)
         }
-        player.setAmbientScale(smoothedAmbientScale)
         return player.maskIntensity
     }
 
     private fun resetAmbientIntensity() {
+        handler.removeCallbacks(envelopeTick)
         hasAmbientScale = false
         smoothedAmbientScale = 1f
+        ambientTargetScale = 1f
+        coveredLatched = false
         player.resetAmbientScale()
+    }
+
+    private fun scoreResidual(analysis: NoiseAnalysis, currentSound: MaskingSoundId): NoiseAnalysis {
+        val match = selfMatch(currentSound, analysis.melBandEnergies)
+        val residualFraction = (1f - match).coerceIn(0.01f, 1f)
+        val residualDbfs = analysis.relativeDbfs + 20f * log10(residualFraction.toDouble()).toFloat()
+        val coverState = when {
+            match >= COVERED_ENTER_SELF_MATCH &&
+                residualDbfs <= COVERED_ENTER_RESIDUAL_DBFS -> CoverState.COVERED
+            residualDbfs > AMBIENT_DBFS_FLOOR + 5f -> CoverState.MASKING_EXTERNAL
+            else -> CoverState.LISTENING
+        }
+        if (coverState == CoverState.COVERED) coveredLatched = true
+        return analysis.copy(
+            selfMatch = match,
+            residualDbfs = residualDbfs,
+            coverState = if (coveredLatched && match >= COVERED_EXIT_SELF_MATCH) {
+                CoverState.COVERED
+            } else {
+                coverState
+            },
+        )
+    }
+
+    private fun selfMatch(sound: MaskingSoundId, spectrum: List<Float>): Float {
+        if (spectrum.size != MEL_BANDS) return 0f
+        val weights = maskWeights(sound)
+        val total = weights.sum().coerceAtLeast(0.0001f)
+        val distance = spectrum.indices.sumOf {
+            abs(spectrum[it] - weights[it] / total).toDouble()
+        }.toFloat()
+        return (1f - distance / 2f).coerceIn(0f, 1f)
     }
 
     private fun maybeAdapt(analysis: NoiseAnalysis) {
@@ -302,29 +374,32 @@ class MaskingPlaybackService : MediaSessionService() {
 
     private fun maskingScore(sound: MaskingSoundId, spectrum: List<Float>): Float {
         if (spectrum.size != MEL_BANDS) return Float.NEGATIVE_INFINITY
-        val weights = FloatArray(MEL_BANDS) { band ->
-            val x = band / (MEL_BANDS - 1f)
-            when (sound) {
-                MaskingSoundId.WHITE_NOISE -> 0.70f + 0.30f * x
-                MaskingSoundId.PINK_NOISE -> 1.00f - 0.45f * x
-                MaskingSoundId.BROWN_NOISE -> 1.00f - 0.75f * x
-                MaskingSoundId.OCEAN_WAVES -> 0.70f + 0.25f * kotlin.math.sin(x * Math.PI).toFloat()
-                MaskingSoundId.RAIN -> 0.75f + 0.20f * x
-                MaskingSoundId.FAN -> 0.95f - 0.35f * x
-                MaskingSoundId.AIR_CONDITIONER -> 1.00f - 0.55f * x
-                MaskingSoundId.CAFE_AMBIENCE -> 0.70f + 0.30f * kotlin.math.sin(x * Math.PI).toFloat()
-            }
-        }
+        val weights = maskWeights(sound)
         val total = weights.sum().coerceAtLeast(0.0001f)
         return -spectrum.indices.sumOf {
             abs(spectrum[it] - weights[it] / total).toDouble()
         }.toFloat()
     }
 
+    private fun maskWeights(sound: MaskingSoundId): FloatArray = FloatArray(MEL_BANDS) { band ->
+        val x = band / (MEL_BANDS - 1f)
+        when (sound) {
+            MaskingSoundId.WHITE_NOISE -> 0.70f + 0.30f * x
+            MaskingSoundId.PINK_NOISE -> 1.00f - 0.45f * x
+            MaskingSoundId.BROWN_NOISE -> 1.00f - 0.75f * x
+            MaskingSoundId.OCEAN_WAVES -> 0.70f + 0.25f * kotlin.math.sin(x * Math.PI).toFloat()
+            MaskingSoundId.RAIN -> 0.75f + 0.20f * x
+            MaskingSoundId.FAN -> 0.95f - 0.35f * x
+            MaskingSoundId.AIR_CONDITIONER -> 1.00f - 0.55f * x
+            MaskingSoundId.CAFE_AMBIENCE -> 0.70f + 0.30f * kotlin.math.sin(x * Math.PI).toFloat()
+        }
+    }
+
     companion object {
         const val COMMAND_SET_TIMER = "com.noiseshield.app.SET_TIMER"
         const val COMMAND_SET_ADAPTIVE_MODE = "com.noiseshield.app.SET_ADAPTIVE_MODE"
         const val COMMAND_SET_UI_FOREGROUND = "com.noiseshield.app.SET_UI_FOREGROUND"
+        const val COMMAND_SET_AUDIO_DEVICES = "com.noiseshield.app.SET_AUDIO_DEVICES"
         const val COMMAND_ANALYSIS_EVENT = "com.noiseshield.app.ANALYSIS_EVENT"
         const val COMMAND_TIMER_EVENT = "com.noiseshield.app.TIMER_EVENT"
         const val COMMAND_BREAK_REMINDER = "com.noiseshield.app.BREAK_REMINDER"
@@ -338,6 +413,11 @@ class MaskingPlaybackService : MediaSessionService() {
         const val ARG_MEL_ENERGIES = "mel_energies"
         const val ARG_CAPTURED_AT = "captured_at"
         const val ARG_MASK_INTENSITY = "mask_intensity"
+        const val ARG_SELF_MATCH = "self_match"
+        const val ARG_RESIDUAL_DBFS = "residual_dbfs"
+        const val ARG_COVER_STATE = "cover_state"
+        const val ARG_INPUT_DEVICE_ID = "input_device_id"
+        const val ARG_OUTPUT_DEVICE_ID = "output_device_id"
         const val ARG_TIMER_DEADLINE = "timer_deadline"
         const val ARG_TIMER_REMAINING = "timer_remaining"
         const val ARG_XRUN_COUNT = "xrun_count"
@@ -352,11 +432,17 @@ class MaskingPlaybackService : MediaSessionService() {
         private const val ADAPTIVE_COOLDOWN_MS = 15_000L
         private const val MANUAL_OVERRIDE_DISTANCE = 0.25f
         private const val MANUAL_OVERRIDE_UPDATES = 5
-        /** ~1–2 s smoothing at ~1 Hz analysis ticks. */
-        private const val AMBIENT_EMA_ALPHA = 0.45f
+        /** 250 ms envelope ticks: ~0.7–1 s attack, ~5–7 s release. */
+        private const val ENVELOPE_TICK_MS = 250L
+        private const val ATTACK_ALPHA = 0.45f
+        private const val RELEASE_ALPHA = 0.10f
         private const val AMBIENT_DBFS_FLOOR = -50f
         private const val AMBIENT_DBFS_CEILING = -25f
         private const val AMBIENT_SCALE_MIN = 0.05f
+        private const val COVERED_ENTER_SELF_MATCH = 0.65f
+        private const val COVERED_EXIT_SELF_MATCH = 0.55f
+        private const val COVERED_ENTER_RESIDUAL_DBFS = -40f
+        private const val COVERED_EXIT_RESIDUAL_DBFS = -35f
 
         fun dbfsToAmbientScale(relativeDbfs: Float): Float {
             if (relativeDbfs <= AMBIENT_DBFS_FLOOR) return AMBIENT_SCALE_MIN

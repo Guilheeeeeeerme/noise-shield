@@ -40,10 +40,13 @@ bool MaskingPlayer::openStreamLocked() {
             ->setChannelCount(oboe::ChannelCount::Mono)
             ->setDataCallback(this)
             ->setErrorCallback(this);
+    const int32_t deviceId = preferredDeviceId_.load(std::memory_order_acquire);
+    if (deviceId > 0) builder.setDeviceId(deviceId);
 
     oboe::Result result = builder.openStream(stream_);
     if (result != oboe::Result::OK) {
         builder.setSharingMode(oboe::SharingMode::Shared);
+        if (deviceId > 0) builder.setDeviceId(deviceId);
         result = builder.openStream(stream_);
     }
     if (result != oboe::Result::OK || !stream_) return false;
@@ -60,6 +63,14 @@ bool MaskingPlayer::openStreamLocked() {
     }
     restartRequested_.store(false);
     return true;
+}
+
+void MaskingPlayer::setPreferredDeviceId(int32_t deviceId) {
+    preferredDeviceId_.store(std::max(0, deviceId), std::memory_order_release);
+    // Apply on next open if the stream is not running yet.
+    if (!stream_) return;
+    restartRequested_.store(true, std::memory_order_release);
+    restartCondition_.notify_one();
 }
 
 void MaskingPlayer::stop() {

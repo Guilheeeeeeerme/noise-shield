@@ -114,6 +114,20 @@ Java_com_noiseshield_audio_NativeAudioEngine_nativeStopCapture(JNIEnv *, jobject
     if (gCapture) gCapture->stop();
 }
 
+JNIEXPORT void JNICALL
+Java_com_noiseshield_audio_NativeAudioEngine_nativeSetInputDeviceId(
+        JNIEnv *, jobject, jint deviceId) {
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gCapture) gCapture->setPreferredDeviceId(deviceId);
+}
+
+JNIEXPORT void JNICALL
+Java_com_noiseshield_audio_NativeAudioEngine_nativeSetOutputDeviceId(
+        JNIEnv *, jobject, jint deviceId) {
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gPlayer) gPlayer->setPreferredDeviceId(deviceId);
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_noiseshield_audio_NativeAudioEngine_nativePollEstimate(JNIEnv *env, jobject) {
     std::lock_guard<std::mutex> lock(gEngineMutex);

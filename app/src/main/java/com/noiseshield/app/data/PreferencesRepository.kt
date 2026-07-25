@@ -23,6 +23,8 @@ data class UserPreferences(
     val adaptiveModeEnabled: Boolean = true,
     val safetyWarningAcknowledged: Boolean = false,
     val feedbackCounters: Map<MaskingSoundId, Pair<Int, Int>> = emptyMap(),
+    val preferredInput: AudioDevicePreference = AudioDevicePreference(),
+    val preferredOutput: AudioDevicePreference = AudioDevicePreference(),
 )
 
 class PreferencesRepository(private val context: Context) {
@@ -35,6 +37,8 @@ class PreferencesRepository(private val context: Context) {
         val adaptiveModeEnabled = booleanPreferencesKey("adaptive_mode_enabled")
         val safetyWarningAcknowledged = booleanPreferencesKey("safety_warning_acknowledged")
         val feedbackCounters = stringSetPreferencesKey("feedback_counters")
+        val preferredInputFingerprint = stringPreferencesKey("preferred_input_fingerprint")
+        val preferredOutputFingerprint = stringPreferencesKey("preferred_output_fingerprint")
     }
 
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
@@ -53,6 +57,14 @@ class PreferencesRepository(private val context: Context) {
             adaptiveModeEnabled = prefs[Keys.adaptiveModeEnabled] ?: true,
             safetyWarningAcknowledged = prefs[Keys.safetyWarningAcknowledged] ?: false,
             feedbackCounters = decodeFeedbackCounters(prefs[Keys.feedbackCounters].orEmpty()),
+            preferredInput = AudioDevicePreference(
+                fingerprint = prefs[Keys.preferredInputFingerprint]
+                    ?: AudioDevicePreference.FINGERPRINT_AUTO,
+            ),
+            preferredOutput = AudioDevicePreference(
+                fingerprint = prefs[Keys.preferredOutputFingerprint]
+                    ?: AudioDevicePreference.FINGERPRINT_AUTO,
+            ),
         )
     }
 
@@ -97,6 +109,22 @@ class PreferencesRepository(private val context: Context) {
             prefs[Keys.feedbackCounters] = counters.map { (id, value) ->
                 "${id.name}:${value.first}:${value.second}"
             }.toSet()
+        }
+    }
+
+    suspend fun setPreferredInput(fingerprint: String) {
+        context.dataStore.edit {
+            it[Keys.preferredInputFingerprint] = fingerprint.ifBlank {
+                AudioDevicePreference.FINGERPRINT_AUTO
+            }
+        }
+    }
+
+    suspend fun setPreferredOutput(fingerprint: String) {
+        context.dataStore.edit {
+            it[Keys.preferredOutputFingerprint] = fingerprint.ifBlank {
+                AudioDevicePreference.FINGERPRINT_AUTO
+            }
         }
     }
 

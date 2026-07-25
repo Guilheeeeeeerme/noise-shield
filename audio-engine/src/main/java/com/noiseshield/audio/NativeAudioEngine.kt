@@ -17,6 +17,8 @@ class NativeAudioEngine {
 
     fun startCapture(): Boolean = nativeStartCapture()
     fun stopCapture() = nativeStopCapture()
+    fun setInputDeviceId(deviceId: Int) = nativeSetInputDeviceId(deviceId)
+    fun setOutputDeviceId(deviceId: Int) = nativeSetOutputDeviceId(deviceId)
 
     /** Returns [relative dBFS, level bucket, sound ID, confidence, 24 mel energies]. */
     fun pollEstimate(): FloatArray? = nativePollEstimate()
@@ -32,6 +34,8 @@ class NativeAudioEngine {
     private external fun nativeLoadPcm16(soundId: Int, samples: ShortArray, sampleRate: Int)
     private external fun nativeStartCapture(): Boolean
     private external fun nativeStopCapture()
+    private external fun nativeSetInputDeviceId(deviceId: Int)
+    private external fun nativeSetOutputDeviceId(deviceId: Int)
     private external fun nativePollEstimate(): FloatArray?
     private external fun nativePollRecoveryState(): Int
     private external fun nativeGetXRunCount(): Int

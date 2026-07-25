@@ -21,8 +21,12 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.noiseshield.app.NoiseShieldApp
+import com.noiseshield.app.audio.AudioDeviceCatalog
 import com.noiseshield.app.data.AppLanguage
 import com.noiseshield.app.data.AppThemeMode
+import com.noiseshield.app.data.AudioDevicePreference
+import com.noiseshield.app.data.AudioRouteDevice
+import com.noiseshield.app.data.CoverState
 import com.noiseshield.app.data.MaskingSoundId
 import com.noiseshield.app.data.NoiseAnalysis
 import com.noiseshield.app.data.NoiseLevelBucket
@@ -30,6 +34,10 @@ import com.noiseshield.app.data.PreferencesRepository
 import com.noiseshield.app.data.UserPreferences
 import com.noiseshield.app.service.MaskingPlaybackService
 import com.noiseshield.app.service.NativeMaskingPlayer
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,8 +67,13 @@ data class SessionUiState(
     val estimate: NoiseAnalysis? = null,
     /** Fraction of user volume applied after ambient ducking (null when not analyzing). */
     val maskIntensity: Float? = null,
+    val coverState: CoverState? = null,
     /** Brief banner when adaptive mode auto-switches the mask. */
     val adaptiveSwitchTo: MaskingSoundId? = null,
+    val inputDevices: List<AudioRouteDevice> = emptyList(),
+    val outputDevices: List<AudioRouteDevice> = emptyList(),
+    val selectedInputFingerprint: String = AudioDevicePreference.FINGERPRINT_AUTO,
+    val selectedOutputFingerprint: String = AudioDevicePreference.FINGERPRINT_AUTO,
     val favorites: Set<MaskingSoundId> = emptySet(),
     val showFeedback: Boolean = false,
     val showSafetyWarning: Boolean = false,
@@ -83,6 +96,17 @@ class SessionViewModel(
     private var volumePersistenceJob: Job? = null
     private var safetyMonitorJob: Job? = null
     private var timerDeadlineElapsedRealtime: Long? = null
+    private val audioManager = appContext.getSystemService(AudioManager::class.java)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+            refreshAudioDevices()
+        }
+
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+            refreshAudioDevices()
+        }
+    }
 
     private val playerListener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
@@ -120,6 +144,8 @@ class SessionViewModel(
 
     init {
         connectController()
+        audioManager?.registerAudioDeviceCallback(deviceCallback, mainHandler)
+        refreshAudioDevices()
 
         viewModelScope.launch {
             prefsRepo.preferences.collect { prefs ->
@@ -129,8 +155,11 @@ class SessionViewModel(
                         favorites = prefs.favorites,
                         sound = if (!it.playing) prefs.lastSound else it.sound,
                         volume = if (!it.playing) prefs.lastVolume else it.volume,
+                        selectedInputFingerprint = prefs.preferredInput.fingerprint,
+                        selectedOutputFingerprint = prefs.preferredOutput.fingerprint,
                     )
                 }
+                applyAudioRouting(prefs)
                 if (controller != null && !_state.value.playing) applyPreferencesToController(prefs)
             }
         }
@@ -184,6 +213,7 @@ class SessionViewModel(
                 else if (it.playing) SessionRuntimeState.CAPTURING else SessionRuntimeState.READY,
                 estimate = if (granted) it.estimate else null,
                 maskIntensity = if (granted) it.maskIntensity else null,
+                coverState = if (granted) it.coverState else null,
             )
         }
         setUiForeground(uiForeground)
@@ -193,7 +223,7 @@ class SessionViewModel(
         uiForeground = foreground
         sendBooleanCommand(MaskingPlaybackService.COMMAND_SET_UI_FOREGROUND, foreground)
         if (!foreground) {
-            _state.update { it.copy(estimate = null, maskIntensity = null) }
+            _state.update { it.copy(estimate = null, maskIntensity = null, coverState = null) }
         }
     }
 
@@ -247,6 +277,7 @@ class SessionViewModel(
                 playing = false,
                 estimate = null,
                 maskIntensity = null,
+                coverState = null,
                 adaptiveSwitchTo = null,
                 showFeedback = showFeedback,
             )
@@ -314,6 +345,28 @@ class SessionViewModel(
         viewModelScope.launch { prefsRepo.setAdaptiveModeEnabled(enabled) }
     }
 
+    fun setInputDevice(fingerprint: String) {
+        val normalized = fingerprint.ifBlank { AudioDevicePreference.FINGERPRINT_AUTO }
+        _state.update { it.copy(selectedInputFingerprint = normalized) }
+        val prefs = _state.value.prefs.copy(
+            preferredInput = AudioDevicePreference(fingerprint = normalized),
+        )
+        _state.update { it.copy(prefs = prefs) }
+        applyAudioRouting(prefs)
+        viewModelScope.launch { prefsRepo.setPreferredInput(normalized) }
+    }
+
+    fun setOutputDevice(fingerprint: String) {
+        val normalized = fingerprint.ifBlank { AudioDevicePreference.FINGERPRINT_AUTO }
+        _state.update { it.copy(selectedOutputFingerprint = normalized) }
+        val prefs = _state.value.prefs.copy(
+            preferredOutput = AudioDevicePreference(fingerprint = normalized),
+        )
+        _state.update { it.copy(prefs = prefs) }
+        applyAudioRouting(prefs)
+        viewModelScope.launch { prefsRepo.setPreferredOutput(normalized) }
+    }
+
     fun dismissSafetyWarning() {
         viewModelScope.launch { prefsRepo.acknowledgeSafetyWarning() }
         _state.update { it.copy(showSafetyWarning = false) }
@@ -329,6 +382,7 @@ class SessionViewModel(
         val sound = args.getString(MaskingPlaybackService.ARG_SOUND_ID)?.let {
             runCatching { MaskingSoundId.valueOf(it) }.getOrNull()
         } ?: return
+        val coverOrdinal = args.getInt(MaskingPlaybackService.ARG_COVER_STATE, 0)
         val analysis = NoiseAnalysis(
             relativeDbfs = args.getFloat(MaskingPlaybackService.ARG_RELATIVE_DBFS),
             levelBucket = NoiseLevelBucket.fromOrdinal(
@@ -339,6 +393,12 @@ class SessionViewModel(
             melBandEnergies = args.getFloatArray(MaskingPlaybackService.ARG_MEL_ENERGIES)
                 ?.toList().orEmpty(),
             capturedAtElapsedRealtime = args.getLong(MaskingPlaybackService.ARG_CAPTURED_AT),
+            selfMatch = args.getFloat(MaskingPlaybackService.ARG_SELF_MATCH, 0f),
+            residualDbfs = args.getFloat(
+                MaskingPlaybackService.ARG_RESIDUAL_DBFS,
+                args.getFloat(MaskingPlaybackService.ARG_RELATIVE_DBFS),
+            ),
+            coverState = CoverState.entries.getOrElse(coverOrdinal) { CoverState.LISTENING },
         )
         val intensity = if (args.containsKey(MaskingPlaybackService.ARG_MASK_INTENSITY)) {
             args.getFloat(MaskingPlaybackService.ARG_MASK_INTENSITY).coerceIn(0f, 1f)
@@ -349,6 +409,7 @@ class SessionViewModel(
             it.copy(
                 estimate = analysis,
                 maskIntensity = intensity,
+                coverState = analysis.coverState,
                 runtimeState = SessionRuntimeState.CAPTURING,
             )
         }
@@ -441,10 +502,52 @@ class SessionViewModel(
             volume = prefs.lastVolume.coerceIn(0f, 1f)
         }
         sendBooleanCommand(MaskingPlaybackService.COMMAND_SET_ADAPTIVE_MODE, prefs.adaptiveModeEnabled)
+        applyAudioRouting(prefs)
+    }
+
+    private fun applyAudioRouting(prefs: UserPreferences) {
+        val inputs = AudioDeviceCatalog.listInputs(appContext)
+        val outputs = AudioDeviceCatalog.listOutputs(appContext)
+        _state.update {
+            it.copy(
+                inputDevices = inputs,
+                outputDevices = outputs,
+                selectedInputFingerprint = prefs.preferredInput.fingerprint,
+                selectedOutputFingerprint = prefs.preferredOutput.fingerprint,
+            )
+        }
+        // If a saved device disappeared, keep UI honest by falling back to Auto selection highlight
+        // only when resolve cannot match — preference stays until user changes it.
+        val inputId = AudioDeviceCatalog.resolveDeviceId(
+            available = inputs,
+            preference = prefs.preferredInput,
+            preferBuiltinWhenAuto = true,
+            preferBluetoothWhenAuto = false,
+        )
+        val outputId = AudioDeviceCatalog.resolveDeviceId(
+            available = outputs,
+            preference = prefs.preferredOutput,
+            preferBuiltinWhenAuto = false,
+            preferBluetoothWhenAuto = true,
+        )
+        val mediaController = controller ?: return
+        val args = Bundle().apply {
+            putInt(MaskingPlaybackService.ARG_INPUT_DEVICE_ID, inputId)
+            putInt(MaskingPlaybackService.ARG_OUTPUT_DEVICE_ID, outputId)
+        }
+        mediaController.sendCustomCommand(
+            SessionCommand(MaskingPlaybackService.COMMAND_SET_AUDIO_DEVICES, Bundle.EMPTY),
+            args,
+        )
+    }
+
+    private fun refreshAudioDevices() {
+        applyAudioRouting(_state.value.prefs)
     }
 
     override fun onCleared() {
         safetyMonitorJob?.cancel()
+        audioManager?.unregisterAudioDeviceCallback(deviceCallback)
         controller?.removeListener(playerListener)
         controllerFuture?.let(MediaController::releaseFuture)
         super.onCleared()

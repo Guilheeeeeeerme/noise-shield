@@ -31,11 +31,14 @@ bool MicCapture::openStreamLocked() {
             ->setInputPreset(oboe::InputPreset::Unprocessed)
             ->setDataCallback(this)
             ->setErrorCallback(this);
+    const int32_t deviceId = preferredDeviceId_.load(std::memory_order_acquire);
+    if (deviceId > 0) builder.setDeviceId(deviceId);
 
     oboe::Result result = builder.openStream(stream_);
     if (result != oboe::Result::OK) {
         builder.setInputPreset(oboe::InputPreset::Generic)
                 ->setSharingMode(oboe::SharingMode::Shared);
+        if (deviceId > 0) builder.setDeviceId(deviceId);
         result = builder.openStream(stream_);
     }
     if (result != oboe::Result::OK || !stream_) return false;
@@ -49,6 +52,13 @@ bool MicCapture::openStreamLocked() {
     running_.store(true);
     restartRequested_.store(false);
     return true;
+}
+
+void MicCapture::setPreferredDeviceId(int32_t deviceId) {
+    preferredDeviceId_.store(std::max(0, deviceId), std::memory_order_release);
+    if (!desiredRunning_.load()) return;
+    restartRequested_.store(true, std::memory_order_release);
+    restartCondition_.notify_one();
 }
 
 void MicCapture::stop() {

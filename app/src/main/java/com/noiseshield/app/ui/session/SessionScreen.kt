@@ -45,6 +45,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.noiseshield.app.R
+import com.noiseshield.app.data.AudioDevicePreference
+import com.noiseshield.app.data.AudioRouteDevice
+import com.noiseshield.app.data.CoverState
 import com.noiseshield.app.data.MaskingSoundId
 import com.noiseshield.app.data.NoiseLevelBucket
 
@@ -62,6 +65,8 @@ fun SessionScreen(
     onDismissFeedback: () -> Unit,
     onRequestMic: () -> Unit,
     onAdaptiveMode: (Boolean) -> Unit,
+    onInputDevice: (String) -> Unit,
+    onOutputDevice: (String) -> Unit,
     onDismissSafetyWarning: () -> Unit,
     onDismissBreakReminder: () -> Unit,
 ) {
@@ -121,8 +126,18 @@ fun SessionScreen(
                 maskIntensity = state.maskIntensity,
                 melEnergies = state.estimate?.melBandEnergies.orEmpty(),
                 suggestedSound = state.estimate?.suggestedSoundId,
+                coverState = state.coverState,
                 limited = state.limitedMode,
             )
+
+            if (!state.limitedMode) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    stringResource(R.string.placement_tip),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             val adaptiveSwitchTo = state.adaptiveSwitchTo
             if (adaptiveSwitchTo != null) {
@@ -298,6 +313,16 @@ fun SessionScreen(
                     }
                 }
             }
+
+            Spacer(Modifier.height(24.dp))
+            AudioRoutePickers(
+                inputDevices = state.inputDevices,
+                outputDevices = state.outputDevices,
+                selectedInputFingerprint = state.selectedInputFingerprint,
+                selectedOutputFingerprint = state.selectedOutputFingerprint,
+                onInputDevice = onInputDevice,
+                onOutputDevice = onOutputDevice,
+            )
             Spacer(Modifier.height(32.dp))
         }
     }
@@ -352,6 +377,7 @@ private fun NoiseLevelIndicator(
     maskIntensity: Float?,
     melEnergies: List<Float>,
     suggestedSound: MaskingSoundId?,
+    coverState: CoverState?,
     limited: Boolean,
 ) {
     val continuousFill = when {
@@ -380,6 +406,20 @@ private fun NoiseLevelIndicator(
             )
         }
         Spacer(Modifier.height(8.dp))
+        if (!limited && coverState != null) {
+            Text(
+                stringResource(
+                    when (coverState) {
+                        CoverState.LISTENING -> R.string.cover_listening
+                        CoverState.MASKING_EXTERNAL -> R.string.cover_masking_external
+                        CoverState.COVERED -> R.string.cover_covered
+                    },
+                ),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(4.dp))
+        }
         Text(
             if (limited) {
                 stringResource(R.string.analysis_unavailable)
@@ -406,6 +446,90 @@ private fun NoiseLevelIndicator(
         if (!limited && melEnergies.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             MelSpectrumStrip(energies = melEnergies)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AudioRoutePickers(
+    inputDevices: List<AudioRouteDevice>,
+    outputDevices: List<AudioRouteDevice>,
+    selectedInputFingerprint: String,
+    selectedOutputFingerprint: String,
+    onInputDevice: (String) -> Unit,
+    onOutputDevice: (String) -> Unit,
+) {
+    val showInput = inputDevices.size > 1
+    val showOutput = outputDevices.size > 1
+    if (!showInput && !showOutput) return
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (showInput) {
+            Text(
+                stringResource(R.string.label_input),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            DeviceChipRow(
+                devices = inputDevices,
+                selectedFingerprint = selectedInputFingerprint,
+                autoLabel = stringResource(R.string.device_auto_phone_mic),
+                onSelect = onInputDevice,
+            )
+        }
+        if (showInput && showOutput) Spacer(Modifier.height(16.dp))
+        if (showOutput) {
+            Text(
+                stringResource(R.string.label_output),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            DeviceChipRow(
+                devices = outputDevices,
+                selectedFingerprint = selectedOutputFingerprint,
+                autoLabel = stringResource(R.string.device_auto_bt_speaker),
+                onSelect = onOutputDevice,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DeviceChipRow(
+    devices: List<AudioRouteDevice>,
+    selectedFingerprint: String,
+    autoLabel: String,
+    onSelect: (String) -> Unit,
+) {
+    val autoSelected = selectedFingerprint == AudioDevicePreference.FINGERPRINT_AUTO
+    val matchedFingerprint = when {
+        autoSelected -> null
+        else -> devices.firstOrNull { it.fingerprint == selectedFingerprint }?.fingerprint
+            ?: devices.firstOrNull { device ->
+                val type = selectedFingerprint.substringBefore('|').toIntOrNull()
+                type != null && device.type == type
+            }?.fingerprint
+    }
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        FilterChip(
+            selected = autoSelected || matchedFingerprint == null,
+            onClick = { onSelect(AudioDevicePreference.FINGERPRINT_AUTO) },
+            label = { Text(autoLabel) },
+        )
+        devices.forEach { device ->
+            FilterChip(
+                selected = matchedFingerprint == device.fingerprint,
+                onClick = { onSelect(device.fingerprint) },
+                label = { Text(device.name) },
+            )
         }
     }
 }

@@ -70,6 +70,9 @@ class MaskingEngine(
 
     fun xRunCount(): Int = native.getXRunCount()
 
+    fun setInputDeviceId(deviceId: Int) = native.setInputDeviceId(deviceId)
+    fun setOutputDeviceId(deviceId: Int) = native.setOutputDeviceId(deviceId)
+
     fun startCapture(): Boolean {
         val ok = native.startCapture()
         if (ok) {

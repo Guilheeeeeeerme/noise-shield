@@ -52,6 +52,8 @@ class NativeMaskingPlayer(
     private var ambientScale = 1f
     /** Audio-focus duck multiplier (1 = unducked). */
     private var focusDuck = 1f
+    private var preferredInputDeviceId = 0
+    private var preferredOutputDeviceId = 0
     private var focusRequest: AudioFocusRequest? = null
     private var recoveryObserver: Job? = null
     private var decodeJob: Job? = null
@@ -220,11 +222,23 @@ class NativeMaskingPlayer(
         invalidateState()
     }
 
-    fun startCapture(): Boolean = initialized && engine.startCapture()
+    fun startCapture(): Boolean {
+        if (!initialized) return false
+        engine.setInputDeviceId(preferredInputDeviceId)
+        return engine.startCapture()
+    }
 
     fun stopCapture() {
         engine.stopCapture()
         resetAmbientScale()
+    }
+
+    fun setPreferredDevices(inputDeviceId: Int, outputDeviceId: Int) {
+        preferredInputDeviceId = inputDeviceId.coerceAtLeast(0)
+        preferredOutputDeviceId = outputDeviceId.coerceAtLeast(0)
+        if (!initialized) return
+        engine.setInputDeviceId(preferredInputDeviceId)
+        engine.setOutputDeviceId(preferredOutputDeviceId)
     }
 
     fun xRunCount(): Int = engine.xRunCount()
@@ -293,6 +307,8 @@ class NativeMaskingPlayer(
             PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
         )
         if (initialized) {
+            engine.setInputDeviceId(preferredInputDeviceId)
+            engine.setOutputDeviceId(preferredOutputDeviceId)
             prepareSound(selectedSound, 0f)
             applyEffectiveVolume()
         }

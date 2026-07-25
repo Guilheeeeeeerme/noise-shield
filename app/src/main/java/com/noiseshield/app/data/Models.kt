@@ -27,6 +27,12 @@ enum class NoiseLevelBucket {
     }
 }
 
+enum class CoverState {
+    LISTENING,
+    MASKING_EXTERNAL,
+    COVERED,
+}
+
 data class NoiseAnalysis(
     val relativeDbfs: Float,
     val levelBucket: NoiseLevelBucket,
@@ -34,6 +40,31 @@ data class NoiseAnalysis(
     val confidence: Float,
     val melBandEnergies: List<Float>,
     val capturedAtElapsedRealtime: Long,
+    val selfMatch: Float = 0f,
+    val residualDbfs: Float = relativeDbfs,
+    val coverState: CoverState = CoverState.LISTENING,
+)
+
+/** Stable fingerprint for rematching audio devices after reconnect. */
+data class AudioDevicePreference(
+    val fingerprint: String = FINGERPRINT_AUTO,
+    val deviceId: Int = DEVICE_ID_AUTO,
+) {
+    val isAuto: Boolean get() = fingerprint == FINGERPRINT_AUTO
+
+    companion object {
+        const val FINGERPRINT_AUTO = "auto"
+        const val DEVICE_ID_AUTO = 0
+    }
+}
+
+data class AudioRouteDevice(
+    val id: Int,
+    val fingerprint: String,
+    val name: String,
+    val type: Int,
+    val isBuiltin: Boolean,
+    val isBluetooth: Boolean,
 )
 
 enum class AppThemeMode { SYSTEM, LIGHT, DARK }

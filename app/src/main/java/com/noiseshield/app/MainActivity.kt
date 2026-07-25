@@ -134,6 +134,8 @@ private fun AppRoot(
                 onDismissFeedback = viewModel::dismissFeedback,
                 onRequestMic = onRequestMic,
                 onAdaptiveMode = viewModel::setAdaptiveMode,
+                onInputDevice = viewModel::setInputDevice,
+                onOutputDevice = viewModel::setOutputDevice,
                 onDismissSafetyWarning = viewModel::dismissSafetyWarning,
                 onDismissBreakReminder = viewModel::dismissBreakReminder,
             )
