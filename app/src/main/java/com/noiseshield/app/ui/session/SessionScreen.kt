@@ -33,12 +33,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier.Modifier
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +61,9 @@ fun SessionScreen(
     onFeedback: (Boolean) -> Unit,
     onDismissFeedback: () -> Unit,
     onRequestMic: () -> Unit,
+    onAdaptiveMode: (Boolean) -> Unit,
+    onDismissSafetyWarning: () -> Unit,
+    onDismissBreakReminder: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -113,7 +117,7 @@ fun SessionScreen(
 
             NoiseLevelIndicator(
                 level = state.estimate?.levelBucket,
-                profileLabel = state.estimate?.broadProfile?.name?.lowercase(),
+                suggestedSound = state.estimate?.suggestedSoundId,
                 limited = state.limitedMode,
             )
 
@@ -129,7 +133,9 @@ fun SessionScreen(
             ) {
                 Icon(
                     imageVector = if (state.playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = null,
+                    contentDescription = stringResource(
+                        if (state.playing) R.string.action_pause else R.string.action_play,
+                    ),
                     tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(48.dp),
                 )
@@ -141,6 +147,20 @@ fun SessionScreen(
                 else stringResource(R.string.session_ready),
                 style = MaterialTheme.typography.bodyMedium,
             )
+            Text(
+                text = stringResource(
+                    when (state.runtimeState) {
+                        SessionRuntimeState.INITIALIZING -> R.string.state_initializing
+                        SessionRuntimeState.READY -> R.string.state_ready
+                        SessionRuntimeState.PERMISSION_REQUIRED -> R.string.state_permission_required
+                        SessionRuntimeState.CAPTURING -> R.string.state_capturing
+                        SessionRuntimeState.FOCUS_DELAYED -> R.string.state_focus_delayed
+                        SessionRuntimeState.RECOVERING -> R.string.state_recovering
+                        SessionRuntimeState.ERROR -> R.string.state_error
+                    },
+                ),
+                style = MaterialTheme.typography.bodySmall,
+            )
 
             Spacer(Modifier.height(20.dp))
             Text(stringResource(R.string.label_volume), modifier = Modifier.fillMaxWidth())
@@ -149,6 +169,23 @@ fun SessionScreen(
                 onValueChange = onVolume,
                 modifier = Modifier.fillMaxWidth(),
             )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.label_adaptive_mode))
+                    Text(
+                        stringResource(R.string.adaptive_mode_description),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = state.prefs.adaptiveModeEnabled,
+                    onCheckedChange = onAdaptiveMode,
+                )
+            }
 
             Spacer(Modifier.height(8.dp))
             Text(stringResource(R.string.label_timer), modifier = Modifier.fillMaxWidth())
@@ -198,7 +235,7 @@ fun SessionScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                MaskingSoundId.entries.forEach { sound ->
+                MaskingSoundId.entries.sortedByDescending { it in state.favorites }.forEach { sound ->
                     val selected = state.sound == sound
                     val fav = sound in state.favorites
                     Row(
@@ -219,15 +256,22 @@ fun SessionScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(soundLabel(sound))
-                        Icon(
-                            imageVector = if (fav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(18.dp)
-                                .clickable { onToggleFavorite(sound) },
-                            tint = if (fav) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        )
+                        IconButton(
+                            onClick = { onToggleFavorite(sound) },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (fav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = stringResource(
+                                    if (fav) R.string.accessibility_remove_favorite
+                                    else R.string.accessibility_add_favorite,
+                                    soundLabel(sound),
+                                ),
+                                modifier = Modifier.size(18.dp),
+                                tint = if (fav) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            )
+                        }
                     }
                 }
             }
@@ -252,12 +296,36 @@ fun SessionScreen(
             },
         )
     }
+    if (state.showSafetyWarning) {
+        AlertDialog(
+            onDismissRequest = onDismissSafetyWarning,
+            title = { Text(stringResource(R.string.safety_warning_title)) },
+            text = { Text(stringResource(R.string.safety_warning_body)) },
+            confirmButton = {
+                TextButton(onClick = onDismissSafetyWarning) {
+                    Text(stringResource(R.string.action_understand))
+                }
+            },
+        )
+    }
+    if (state.showBreakReminder) {
+        AlertDialog(
+            onDismissRequest = onDismissBreakReminder,
+            title = { Text(stringResource(R.string.break_reminder_title)) },
+            text = { Text(stringResource(R.string.break_reminder_body)) },
+            confirmButton = {
+                TextButton(onClick = onDismissBreakReminder) {
+                    Text(stringResource(R.string.action_dismiss))
+                }
+            },
+        )
+    }
 }
 
 @Composable
 private fun NoiseLevelIndicator(
     level: NoiseLevelBucket?,
-    profileLabel: String?,
+    suggestedSound: MaskingSoundId?,
     limited: Boolean,
 ) {
     val fill = when (level) {
@@ -289,8 +357,8 @@ private fun NoiseLevelIndicator(
             } else {
                 stringResource(
                     R.string.analysis_status,
-                    level?.name?.lowercase() ?: "—",
-                    profileLabel ?: "—",
+                    level?.let { levelLabel(it) } ?: "—",
+                    suggestedSound?.let { soundLabel(it) } ?: "—",
                 )
             },
             style = MaterialTheme.typography.bodySmall,
@@ -309,5 +377,14 @@ private fun soundLabel(sound: MaskingSoundId): String = stringResource(
         MaskingSoundId.FAN -> R.string.sound_fan
         MaskingSoundId.AIR_CONDITIONER -> R.string.sound_air_conditioner
         MaskingSoundId.CAFE_AMBIENCE -> R.string.sound_cafe_ambience
+    },
+)
+
+@Composable
+private fun levelLabel(level: NoiseLevelBucket): String = stringResource(
+    when (level) {
+        NoiseLevelBucket.LOW -> R.string.level_low
+        NoiseLevelBucket.MEDIUM -> R.string.level_medium
+        NoiseLevelBucket.HIGH -> R.string.level_high
     },
 )

@@ -3,44 +3,65 @@ package com.noiseshield.app.ui.session
 import android.Manifest
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
-import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.os.IBinder
+import android.media.AudioManager
+import android.os.Bundle
+import android.os.SystemClock
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
+import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import com.noiseshield.app.NoiseShieldApp
 import com.noiseshield.app.data.AppLanguage
 import com.noiseshield.app.data.AppThemeMode
-import com.noiseshield.app.data.BroadProfile
 import com.noiseshield.app.data.MaskingSoundId
-import com.noiseshield.app.data.NoiseEstimate
-import com.noiseshield.app.data.PROFILE_TO_SOUND
+import com.noiseshield.app.data.NoiseAnalysis
+import com.noiseshield.app.data.NoiseLevelBucket
 import com.noiseshield.app.data.PreferencesRepository
 import com.noiseshield.app.data.UserPreferences
 import com.noiseshield.app.service.MaskingPlaybackService
+import com.noiseshield.app.service.NativeMaskingPlayer
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.CancellationException
+
+enum class SessionRuntimeState {
+    INITIALIZING,
+    READY,
+    PERMISSION_REQUIRED,
+    CAPTURING,
+    FOCUS_DELAYED,
+    RECOVERING,
+    ERROR,
+}
 
 data class SessionUiState(
     val playing: Boolean = false,
     val sound: MaskingSoundId = MaskingSoundId.WHITE_NOISE,
-    val volume: Float = 0.5f,
+    val volume: Float = 0.3f,
     val timerRemainingSec: Int? = null,
     val limitedMode: Boolean = true,
-    val estimate: NoiseEstimate? = null,
-    val manualOverride: Boolean = false,
-    val lastAutoProfile: BroadProfile? = null,
+    val estimate: NoiseAnalysis? = null,
     val favorites: Set<MaskingSoundId> = emptySet(),
     val showFeedback: Boolean = false,
+    val showSafetyWarning: Boolean = false,
+    val showBreakReminder: Boolean = false,
+    val runtimeState: SessionRuntimeState = SessionRuntimeState.INITIALIZING,
     val prefs: UserPreferences = UserPreferences(),
 )
 
@@ -48,40 +69,54 @@ class SessionViewModel(
     private val appContext: Context,
     private val prefsRepo: PreferencesRepository,
 ) : ViewModel() {
-
     private val _state = MutableStateFlow(SessionUiState())
     val state: StateFlow<SessionUiState> = _state.asStateFlow()
 
-    private var service: MaskingPlaybackService? = null
-    private var bound = false
-    private var timerJob: Job? = null
-    private var estimateJob: Job? = null
-    private var pendingPlay = false
+    private var controller: MediaController? = null
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var pendingStart = false
+    private var uiForeground = false
+    private var volumePersistenceJob: Job? = null
+    private var safetyMonitorJob: Job? = null
+    private var timerDeadlineElapsedRealtime: Long? = null
 
-    private val connection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            val local = binder as MaskingPlaybackService.LocalBinder
-            service = local.getService()
-            bound = true
-            val s = _state.value
-            if (pendingPlay || s.playing) {
-                pendingPlay = false
-                service?.configure(s.sound, s.volume, true)
-                _state.update { it.copy(playing = true) }
-                if (!s.limitedMode) {
-                    service?.startCapture()
-                    watchEstimates()
-                }
+    private val playerListener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            syncPlayer(player)
+        }
+    }
+
+    private val controllerListener = object : MediaController.Listener {
+        override fun onDisconnected(controller: MediaController) {
+            controller.removeListener(playerListener)
+            this@SessionViewModel.controller = null
+            controllerFuture?.let(MediaController::releaseFuture)
+            controllerFuture = null
+            _state.update { it.copy(runtimeState = SessionRuntimeState.INITIALIZING) }
+            viewModelScope.launch {
+                delay(500L)
+                connectController()
             }
         }
 
-        override fun onServiceDisconnected(name: ComponentName?) {
-            bound = false
-            service = null
+        override fun onCustomCommand(
+            controller: MediaController,
+            command: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            when (command.customAction) {
+                MaskingPlaybackService.COMMAND_ANALYSIS_EVENT -> receiveAnalysis(args)
+                MaskingPlaybackService.COMMAND_TIMER_EVENT -> receiveTimer(args)
+                MaskingPlaybackService.COMMAND_BREAK_REMINDER ->
+                    _state.update { it.copy(showBreakReminder = true) }
+            }
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
     }
 
     init {
+        connectController()
+
         viewModelScope.launch {
             prefsRepo.preferences.collect { prefs ->
                 _state.update {
@@ -92,114 +127,158 @@ class SessionViewModel(
                         volume = if (!it.playing) prefs.lastVolume else it.volume,
                     )
                 }
+                if (controller != null && !_state.value.playing) applyPreferencesToController(prefs)
             }
         }
         refreshMicPermission()
     }
 
-    fun bindIfNeeded() {
-        if (bound) return
-        MaskingPlaybackService.start(appContext)
-        appContext.bindService(
-            Intent(appContext, MaskingPlaybackService::class.java),
-            connection,
-            Context.BIND_AUTO_CREATE,
+    private fun connectController() {
+        if (controller != null || controllerFuture?.isDone == false) return
+        val token = SessionToken(
+            appContext,
+            ComponentName(appContext, MaskingPlaybackService::class.java),
+        )
+        val future = MediaController.Builder(appContext, token)
+            .setListener(controllerListener)
+            .buildAsync()
+        controllerFuture = future
+        future.addListener(
+            {
+                try {
+                    controller = future.get().also { mediaController ->
+                        mediaController.addListener(playerListener)
+                        applyPreferencesToController(_state.value.prefs)
+                        setUiForeground(uiForeground)
+                        if (pendingStart) {
+                            pendingStart = false
+                            startSession()
+                        } else {
+                            syncPlayer(mediaController)
+                        }
+                    }
+                } catch (_: ExecutionException) {
+                    _state.update { it.copy(runtimeState = SessionRuntimeState.ERROR) }
+                } catch (_: CancellationException) {
+                    // ViewModel cleared or a superseded reconnection attempt.
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    _state.update { it.copy(runtimeState = SessionRuntimeState.ERROR) }
+                }
+            },
+            ContextCompat.getMainExecutor(appContext),
         )
     }
 
     fun refreshMicPermission() {
-        val granted = ContextCompat.checkSelfPermission(
-            appContext,
-            Manifest.permission.RECORD_AUDIO,
-        ) == PackageManager.PERMISSION_GRANTED
-        _state.update { it.copy(limitedMode = !granted) }
-        if (!granted) {
-            service?.stopCapture()
-            estimateJob?.cancel()
-            _state.update { it.copy(estimate = null) }
+        val granted = ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        _state.update {
+            it.copy(
+                limitedMode = !granted,
+                runtimeState = if (!granted) SessionRuntimeState.PERMISSION_REQUIRED
+                else if (it.playing) SessionRuntimeState.CAPTURING else SessionRuntimeState.READY,
+                estimate = if (granted) it.estimate else null,
+            )
         }
+        setUiForeground(uiForeground)
+    }
+
+    fun setUiForeground(foreground: Boolean) {
+        uiForeground = foreground
+        sendBooleanCommand(MaskingPlaybackService.COMMAND_SET_UI_FOREGROUND, foreground)
+        if (!foreground) _state.update { it.copy(estimate = null) }
     }
 
     fun togglePlay() {
-        val next = !_state.value.playing
-        if (next) startSession() else stopSession(showFeedback = true)
+        if (_state.value.playing) stopSession(showFeedback = true) else startSession()
     }
 
     fun startSession() {
         refreshMicPermission()
-        val s = _state.value
-        _state.update { it.copy(playing = true, showFeedback = false) }
-        viewModelScope.launch {
-            prefsRepo.setLastSound(s.sound)
-            prefsRepo.setLastVolume(s.volume)
+        val mediaController = controller
+        if (mediaController == null) {
+            pendingStart = true
+            return
         }
-        if (service != null) {
-            service?.configure(s.sound, s.volume, true)
-            if (!s.limitedMode) {
-                service?.startCapture()
-                watchEstimates()
+        val current = _state.value
+        mediaController.setMediaItem(NativeMaskingPlayer.mediaItemFor(current.sound))
+        mediaController.volume = current.volume
+        mediaController.prepare()
+        mediaController.play()
+        _state.update { it.copy(playing = true, showFeedback = false) }
+        if (!current.prefs.safetyWarningAcknowledged &&
+            (current.volume > 0.7f || isSystemMediaVolumeHigh())
+        ) {
+            _state.update { it.copy(showSafetyWarning = true) }
+        }
+        safetyMonitorJob?.cancel()
+        safetyMonitorJob = viewModelScope.launch {
+            while (true) {
+                delay(1_000L)
+                val latest = _state.value
+                if (!latest.playing) break
+                if (!latest.prefs.safetyWarningAcknowledged &&
+                    (latest.volume > 0.7f || isSystemMediaVolumeHigh())
+                ) {
+                    _state.update { it.copy(showSafetyWarning = true) }
+                }
             }
-        } else {
-            pendingPlay = true
-            ensureServiceStarted()
+        }
+        setUiForeground(uiForeground)
+        viewModelScope.launch {
+            prefsRepo.setLastSound(current.sound)
+            prefsRepo.setLastVolume(current.volume)
         }
     }
 
     fun stopSession(showFeedback: Boolean = false) {
-        timerJob?.cancel()
-        estimateJob?.cancel()
-        service?.setPlaying(false)
-        service?.stopCapture()
+        controller?.pause()
+        safetyMonitorJob?.cancel()
         _state.update {
             it.copy(
                 playing = false,
-                timerRemainingSec = null,
                 estimate = null,
                 showFeedback = showFeedback,
-                manualOverride = false,
             )
         }
     }
 
-    fun selectSound(sound: MaskingSoundId, manual: Boolean = true) {
-        _state.update {
-            it.copy(
-                sound = sound,
-                manualOverride = manual,
-                lastAutoProfile = if (manual) {
-                    it.estimate?.broadProfile ?: it.lastAutoProfile
-                } else {
-                    it.lastAutoProfile
-                },
-            )
-        }
-        service?.setSound(sound)
+    fun selectSound(sound: MaskingSoundId) {
+        _state.update { it.copy(sound = sound) }
+        controller?.setMediaItem(NativeMaskingPlayer.mediaItemFor(sound))
         viewModelScope.launch { prefsRepo.setLastSound(sound) }
     }
 
     fun setVolume(volume: Float) {
-        _state.update { it.copy(volume = volume) }
-        service?.setVolume(volume)
-        viewModelScope.launch { prefsRepo.setLastVolume(volume) }
+        val clamped = volume.coerceIn(0f, 1f)
+        controller?.volume = clamped
+        _state.update {
+            it.copy(
+                volume = clamped,
+                showSafetyWarning = it.showSafetyWarning ||
+                    (clamped > 0.7f && !it.prefs.safetyWarningAcknowledged),
+            )
+        }
+        volumePersistenceJob?.cancel()
+        volumePersistenceJob = viewModelScope.launch {
+            delay(300)
+            prefsRepo.setLastVolume(clamped)
+        }
     }
 
     fun setTimerMinutes(minutes: Int?) {
-        timerJob?.cancel()
-        if (minutes == null || minutes <= 0) {
-            _state.update { it.copy(timerRemainingSec = null) }
-            return
+        val durationMs = (minutes?.coerceAtLeast(0)?.toLong() ?: 0L) * 60_000L
+        val args = Bundle().apply {
+            putLong(MaskingPlaybackService.ARG_DURATION_MS, durationMs)
         }
-        _state.update { it.copy(timerRemainingSec = minutes * 60) }
-        timerJob = viewModelScope.launch {
-            while (isActive) {
-                delay(1_000)
-                val remaining = _state.value.timerRemainingSec ?: break
-                if (remaining <= 1) {
-                    stopSession(showFeedback = true)
-                    break
-                }
-                _state.update { it.copy(timerRemainingSec = remaining - 1) }
-            }
+        controller?.sendCustomCommand(
+            SessionCommand(MaskingPlaybackService.COMMAND_SET_TIMER, Bundle.EMPTY),
+            args,
+        )
+        if (durationMs == 0L) {
+            timerDeadlineElapsedRealtime = null
+            _state.update { it.copy(timerRemainingSec = null) }
         }
     }
 
@@ -208,67 +287,119 @@ class SessionViewModel(
     }
 
     fun submitFeedback(helped: Boolean) {
-        viewModelScope.launch { prefsRepo.setFeedbackHelped(helped) }
+        viewModelScope.launch { prefsRepo.recordFeedback(_state.value.sound, helped) }
         _state.update { it.copy(showFeedback = false) }
     }
 
-    fun dismissFeedback() {
-        _state.update { it.copy(showFeedback = false) }
-    }
-
+    fun dismissFeedback() = _state.update { it.copy(showFeedback = false) }
     fun setTheme(mode: AppThemeMode) {
         viewModelScope.launch { prefsRepo.setThemeMode(mode) }
     }
 
     fun setLanguage(language: AppLanguage) {
-        viewModelScope.launch { prefsRepo.setLanguage(language) }
+        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language.tag))
     }
 
+    fun setAdaptiveMode(enabled: Boolean) {
+        sendBooleanCommand(MaskingPlaybackService.COMMAND_SET_ADAPTIVE_MODE, enabled)
+        viewModelScope.launch { prefsRepo.setAdaptiveModeEnabled(enabled) }
+    }
+
+    fun dismissSafetyWarning() {
+        viewModelScope.launch { prefsRepo.acknowledgeSafetyWarning() }
+        _state.update { it.copy(showSafetyWarning = false) }
+    }
+
+    fun dismissBreakReminder() = _state.update { it.copy(showBreakReminder = false) }
     fun completeOnboarding() {
         viewModelScope.launch { prefsRepo.setOnboardingDone(true) }
     }
 
-    private fun watchEstimates() {
-        estimateJob?.cancel()
-        val svc = service ?: return
-        estimateJob = viewModelScope.launch {
-            svc.estimate.collect { estimate ->
-                _state.update { it.copy(estimate = estimate) }
-                if (estimate == null) return@collect
-                maybeAutoApply(estimate.broadProfile)
-            }
-        }
+    private fun receiveAnalysis(args: Bundle) {
+        if (!uiForeground || _state.value.limitedMode) return
+        val sound = args.getString(MaskingPlaybackService.ARG_SOUND_ID)?.let {
+            runCatching { MaskingSoundId.valueOf(it) }.getOrNull()
+        } ?: return
+        val analysis = NoiseAnalysis(
+            relativeDbfs = args.getFloat(MaskingPlaybackService.ARG_RELATIVE_DBFS),
+            levelBucket = NoiseLevelBucket.fromOrdinal(
+                args.getInt(MaskingPlaybackService.ARG_LEVEL_BUCKET),
+            ),
+            suggestedSoundId = sound,
+            confidence = args.getFloat(MaskingPlaybackService.ARG_CONFIDENCE),
+            melBandEnergies = args.getFloatArray(MaskingPlaybackService.ARG_MEL_ENERGIES)
+                ?.toList().orEmpty(),
+            capturedAtElapsedRealtime = args.getLong(MaskingPlaybackService.ARG_CAPTURED_AT),
+        )
+        _state.update { it.copy(estimate = analysis, runtimeState = SessionRuntimeState.CAPTURING) }
     }
 
-    private fun maybeAutoApply(profile: BroadProfile) {
-        val s = _state.value
-        if (!s.playing || s.limitedMode) return
-        // Manual override holds until ambient profile changes.
-        if (s.manualOverride && s.lastAutoProfile == profile) return
-
-        val mapped = PROFILE_TO_SOUND[profile] ?: MaskingSoundId.WHITE_NOISE
-        if (mapped == s.sound && s.lastAutoProfile == profile && !s.manualOverride) return
-
+    private fun syncPlayer(player: Player) {
+        val previousSound = _state.value.sound
+        val sound = player.currentMediaItem?.mediaId?.let {
+            runCatching { MaskingSoundId.valueOf(it) }.getOrNull()
+        } ?: _state.value.sound
+        val runtime = when {
+            player.playbackState == Player.STATE_BUFFERING -> SessionRuntimeState.RECOVERING
+            player.playbackSuppressionReason ==
+                Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS ->
+                SessionRuntimeState.FOCUS_DELAYED
+            player.playerError != null -> SessionRuntimeState.ERROR
+            player.playWhenReady && !_state.value.limitedMode -> SessionRuntimeState.CAPTURING
+            else -> SessionRuntimeState.READY
+        }
         _state.update {
             it.copy(
-                sound = mapped,
-                lastAutoProfile = profile,
-                manualOverride = false,
+                playing = player.playWhenReady,
+                sound = sound,
+                volume = player.volume,
+                runtimeState = runtime,
             )
         }
-        service?.setSound(mapped, crossfade = 0.4f)
+        if (sound != previousSound) {
+            viewModelScope.launch { prefsRepo.setLastSound(sound) }
+        }
     }
 
-    private fun ensureServiceStarted() {
-        MaskingPlaybackService.start(appContext)
-        bindIfNeeded()
+    private fun receiveTimer(args: Bundle) {
+        val deadline = args.getLong(MaskingPlaybackService.ARG_TIMER_DEADLINE)
+        val pausedRemaining = args.getLong(MaskingPlaybackService.ARG_TIMER_REMAINING)
+        timerDeadlineElapsedRealtime = deadline.takeIf { it > 0L }
+        val remainingMs = when {
+            deadline > 0L -> deadline - SystemClock.elapsedRealtime()
+            pausedRemaining > 0L -> pausedRemaining
+            else -> 0L
+        }.coerceAtLeast(0L)
+        _state.update {
+            it.copy(timerRemainingSec = remainingMs.takeIf { value -> value > 0L }
+                ?.let { value -> ((value + 999L) / 1_000L).toInt() })
+        }
+    }
+
+    private fun sendBooleanCommand(action: String, enabled: Boolean) {
+        val args = Bundle().apply { putBoolean(MaskingPlaybackService.ARG_ENABLED, enabled) }
+        controller?.sendCustomCommand(SessionCommand(action, Bundle.EMPTY), args)
+    }
+
+    private fun isSystemMediaVolumeHigh(): Boolean {
+        val audioManager = appContext.getSystemService(AudioManager::class.java)
+        val maximum = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        return maximum > 0 &&
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maximum > 0.7f
+    }
+
+    private fun applyPreferencesToController(prefs: UserPreferences) {
+        controller?.apply {
+            setMediaItem(NativeMaskingPlayer.mediaItemFor(prefs.lastSound))
+            volume = prefs.lastVolume.coerceIn(0f, 1f)
+        }
+        sendBooleanCommand(MaskingPlaybackService.COMMAND_SET_ADAPTIVE_MODE, prefs.adaptiveModeEnabled)
     }
 
     override fun onCleared() {
-        if (bound) {
-            appContext.unbindService(connection)
-            bound = false
-        }
+        safetyMonitorJob?.cancel()
+        controller?.removeListener(playerListener)
+        controllerFuture?.let(MediaController::releaseFuture)
         super.onCleared()
     }
 
@@ -276,9 +407,8 @@ class SessionViewModel(
         fun factory(app: NoiseShieldApp): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return SessionViewModel(app, app.preferencesRepository) as T
-                }
+                override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                    SessionViewModel(app, app.preferencesRepository) as T
             }
     }
 }

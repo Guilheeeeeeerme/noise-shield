@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Local-only app: no cloud backup of preferences required -->
-</resources>
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="datastore/" />
+        <exclude domain="sharedpref" path="noise_shield.preferences_pb" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="datastore/" />
+        <exclude domain="sharedpref" path="noise_shield.preferences_pb" />
+    </device-transfer>
+</data-extraction-rules>

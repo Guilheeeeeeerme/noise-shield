@@ -1,6 +1,6 @@
 # Results
 
-Rewrite complete. Validate on device with Android Studio:
+Production optimization implementation is present. Runtime verification remains pending in Android Studio:
 
 1. `./gradlew :app:installDebug`
 2. Airplane mode core session

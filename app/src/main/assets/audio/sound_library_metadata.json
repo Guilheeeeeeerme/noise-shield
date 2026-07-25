@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "license": "CC0-1.0",
+  "source": "audio-engine/generate_sound_assets.sh and native deterministic generator",
+  "assetGeneratorSha256": "7a829893450f8d90e9a717a193ca3ca885a2ddb80b32613c40593fd377f4752a",
+  "generationSourceSha256": "d41be7dcd0f5a44ad8f4b729eb980eab3c321448324dae0ca54a573f4f0df45e",
+  "rendererSourceSha256": "e255aa152193c1cf6a093d7ef30c66ace912d4aa7b03a3f793431d5985887b35",
+  "sampleRateHz": 48000,
+  "peakDbfs": -3.0,
+  "sounds": [
+    {"id": "WHITE_NOISE", "kind": "continuous-procedural"},
+    {"id": "PINK_NOISE", "kind": "continuous-procedural"},
+    {"id": "BROWN_NOISE", "kind": "continuous-procedural"},
+    {"id": "OCEAN_WAVES", "kind": "owned-ogg-loop", "file": "ocean_waves.ogg", "durationSeconds": 30, "sha256": "7a4aab99fa0cbb5c7ff97fe9234ffd0b7e714e807d25e8f14d9af37388a1fc98"},
+    {"id": "RAIN", "kind": "owned-ogg-loop", "file": "rain.ogg", "durationSeconds": 30, "sha256": "ca2d43214d68229a998a8c1d7ba1145901a0c274d27718f339f8407d42fe9d52"},
+    {"id": "FAN", "kind": "owned-ogg-loop", "file": "fan.ogg", "durationSeconds": 30, "sha256": "06a4642fdb6d7a4bf01eca4864e49e5b06f62545af93210efa3861597b14e8c4"},
+    {"id": "AIR_CONDITIONER", "kind": "owned-ogg-loop", "file": "air_conditioner.ogg", "durationSeconds": 30, "sha256": "b69c3f27aa3be80200ec489010d4fd4ae4462314a057104cfa0c1eb6faab1439"},
+    {"id": "CAFE_AMBIENCE", "kind": "owned-ogg-loop", "file": "cafe_ambience.ogg", "durationSeconds": 30, "sha256": "144fd80b032b16d614a9af86050ef78b576180ddc60faeab7df2a2f3066c112b"}
+  ]
+}

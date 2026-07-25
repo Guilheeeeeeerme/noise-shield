@@ -1,19 +1,22 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
 }
 
 android {
     namespace = "com.noiseshield.audio"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+        }
         consumerProguardFiles("consumer-rules.pro")
 
         externalNativeBuild {
             cmake {
-                cppFlags += listOf("-std=c++17", "-O3", "-ffast-math")
+                cppFlags += listOf("-std=c++17", "-O3")
                 arguments += listOf("-DANDROID_STL=c++_shared")
             }
         }
@@ -38,8 +41,17 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    buildFeatures {
+        prefab = true
+    }
 }
 
 dependencies {
-    implementation("androidx.annotation:annotation:1.9.1")
+    implementation(libs.annotation)
+    implementation(libs.oboe)
+}
+
+dependencyLocking {
+    lockAllConfigurations()
 }

@@ -4,13 +4,7 @@ project(noise_shield_audio)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-include(FetchContent)
-FetchContent_Declare(
-    oboe
-    GIT_REPOSITORY https://github.com/google/oboe.git
-    GIT_TAG 1.9.0
-)
-FetchContent_MakeAvailable(oboe)
+find_package(oboe REQUIRED CONFIG)
 
 add_library(
     noise_shield_audio
@@ -30,7 +24,5 @@ target_include_directories(
 
 target_link_libraries(
     noise_shield_audio
-    oboe
-    android
-    log
+    oboe::oboe
 )

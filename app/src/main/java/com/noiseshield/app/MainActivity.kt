@@ -15,8 +15,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier.modifier
-import androidx.core.os.LocaleListCompat
+import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -47,9 +47,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
         enableEdgeToEdge()
         setContent {
             val state by viewModel.state.collectAsStateWithLifecycle()
@@ -61,11 +58,18 @@ class MainActivity : ComponentActivity() {
                         onRequestMic = {
                             micPermission.launch(Manifest.permission.RECORD_AUDIO)
                         },
+                        onRequestNotifications = {
+                            if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                                ContextCompat.checkSelfPermission(
+                                    this,
+                                    Manifest.permission.POST_NOTIFICATIONS,
+                                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) {
+                                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        },
                         onLanguage = { lang ->
                             viewModel.setLanguage(lang)
-                            AppCompatDelegate.setApplicationLocales(
-                                LocaleListCompat.forLanguageTags(lang.tag),
-                            )
                         },
                     )
                 }
@@ -77,6 +81,16 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         viewModel.refreshMicPermission()
     }
+
+    override fun onStart() {
+        super.onStart()
+        viewModel.setUiForeground(true)
+    }
+
+    override fun onStop() {
+        viewModel.setUiForeground(false)
+        super.onStop()
+    }
 }
 
 @Composable
@@ -84,6 +98,7 @@ private fun AppRoot(
     state: SessionUiState,
     viewModel: SessionViewModel,
     onRequestMic: () -> Unit,
+    onRequestNotifications: () -> Unit,
     onLanguage: (AppLanguage) -> Unit,
 ) {
     var showOnboarding by rememberSaveable {
@@ -106,8 +121,11 @@ private fun AppRoot(
         composable("session") {
             SessionScreen(
                 state = state,
-                onTogglePlay = viewModel::togglePlay,
-                onSelectSound = { viewModel.selectSound(it, manual = true) },
+                onTogglePlay = {
+                    if (!state.playing) onRequestNotifications()
+                    viewModel.togglePlay()
+                },
+                onSelectSound = viewModel::selectSound,
                 onVolume = viewModel::setVolume,
                 onTimer = viewModel::setTimerMinutes,
                 onToggleFavorite = viewModel::toggleFavorite,
@@ -115,11 +133,17 @@ private fun AppRoot(
                 onFeedback = viewModel::submitFeedback,
                 onDismissFeedback = viewModel::dismissFeedback,
                 onRequestMic = onRequestMic,
+                onAdaptiveMode = viewModel::setAdaptiveMode,
+                onDismissSafetyWarning = viewModel::dismissSafetyWarning,
+                onDismissBreakReminder = viewModel::dismissBreakReminder,
             )
         }
         composable("settings") {
             SettingsScreen(
                 prefs = state.prefs,
+                currentLanguage = AppLanguage.fromTag(
+                    AppCompatDelegate.getApplicationLocales()[0]?.language ?: "en",
+                ),
                 onBack = { navController.popBackStack() },
                 onTheme = viewModel::setTheme,
                 onLanguage = onLanguage,

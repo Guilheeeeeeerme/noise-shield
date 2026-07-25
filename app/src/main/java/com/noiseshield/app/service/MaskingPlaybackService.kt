@@ -1,253 +1,323 @@
 package com.noiseshield.app.service
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.app.Service
-import android.content.Context
-import android.content.Intent
-import android.content.pm.ServiceInfo
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
-import android.os.Binder
-import android.os.Build
-import android.os.IBinder
-import androidx.core.app.NotificationCompat
-import com.noiseshield.app.MainActivity
-import com.noiseshield.app.NoiseShieldApp
-import com.noiseshield.app.R
-import com.noiseshield.app.audio.MaskingEngine
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import androidx.media3.common.Player
+import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionCommands
+import androidx.media3.session.SessionResult
 import com.noiseshield.app.data.MaskingSoundId
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import com.noiseshield.app.data.NoiseAnalysis
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
-/**
- * Foreground service for background masking playback (Oboe via [MaskingEngine]).
- */
-class MaskingPlaybackService : Service(), AudioManager.OnAudioFocusChangeListener {
+class MaskingPlaybackService : MediaSessionService() {
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val handler = Handler(Looper.getMainLooper())
+    private lateinit var player: NativeMaskingPlayer
+    private lateinit var session: MediaSession
+    private var timerDeadlineElapsedRealtime: Long? = null
+    private var timerRemainingWhenPausedMs: Long? = null
+    private var adaptiveModeEnabled = true
+    private var uiForeground = false
+    private var latestAnalysis: NoiseAnalysis? = null
+    private var manualOverride = false
+    private var manualBaseline: List<Float>? = null
+    private var manualShiftUpdates = 0
+    private var candidateSound: MaskingSoundId? = null
+    private var candidateUpdates = 0
+    private var adaptiveCooldownUntil = 0L
+    private var breakReminderDeadline = 0L
+    private var breakReminderSent = false
+    private val stopPausedService = Runnable {
+        if (!player.playWhenReady) stopSelf()
+    }
 
-    private val binder = LocalBinder()
-    private lateinit var engine: MaskingEngine
-    private lateinit var audioManager: AudioManager
-    private var focusRequest: AudioFocusRequest? = null
-
-    private var sound: MaskingSoundId = MaskingSoundId.WHITE_NOISE
-    private var volume: Float = 0.5f
-    private var playing: Boolean = false
-
-    inner class LocalBinder : Binder() {
-        fun getService(): MaskingPlaybackService = this@MaskingPlaybackService
+    private val timerTick = object : Runnable {
+        override fun run() {
+            val deadline = timerDeadlineElapsedRealtime ?: return
+            if (!player.isPlaying) return
+            if (SystemClock.elapsedRealtime() >= deadline) {
+                timerDeadlineElapsedRealtime = null
+                player.pause()
+                player.stopCapture()
+                broadcastTimer()
+                return
+            }
+            broadcastTimer()
+            handler.postDelayed(this, TIMER_TICK_MS)
+        }
+    }
+    private val breakReminderTick = object : Runnable {
+        override fun run() {
+            if (!player.isPlaying) return
+            if (!breakReminderSent && SystemClock.elapsedRealtime() >= breakReminderDeadline) {
+                breakReminderSent = true
+                session.broadcastCustomCommand(
+                    SessionCommand(COMMAND_BREAK_REMINDER, Bundle.EMPTY),
+                    Bundle.EMPTY,
+                )
+                return
+            }
+            handler.postDelayed(this, BREAK_REMINDER_TICK_MS)
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
-        engine = (application as NoiseShieldApp).maskingEngine
-        engine.init()
-        audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-        createChannel()
-        startAsForeground()
+        player = NativeMaskingPlayer(this, serviceScope)
+        session = MediaSession.Builder(this, player)
+            .setCallback(SessionCallback())
+            .build()
+        player.addListener(object : Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                handler.removeCallbacks(stopPausedService)
+                if (playWhenReady) {
+                    if (uiForeground) player.startCapture()
+                } else {
+                    player.stopCapture()
+                    handler.postDelayed(stopPausedService, PAUSED_SERVICE_STOP_DELAY_MS)
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                handler.removeCallbacks(timerTick)
+                handler.removeCallbacks(breakReminderTick)
+                if (isPlaying) {
+                    timerRemainingWhenPausedMs?.let {
+                        timerDeadlineElapsedRealtime = SystemClock.elapsedRealtime() + it
+                        timerRemainingWhenPausedMs = null
+                    }
+                    if (timerDeadlineElapsedRealtime != null) handler.post(timerTick)
+                    breakReminderDeadline = SystemClock.elapsedRealtime() + BREAK_REMINDER_DELAY_MS
+                    breakReminderSent = false
+                    handler.post(breakReminderTick)
+                } else {
+                    timerDeadlineElapsedRealtime?.let {
+                        timerRemainingWhenPausedMs =
+                            (it - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+                    }
+                    timerDeadlineElapsedRealtime = null
+                    broadcastTimer()
+                    breakReminderDeadline = 0L
+                    breakReminderSent = false
+                }
+            }
+        })
+        serviceScope.launch {
+            player.estimate.collect { analysis ->
+                if (analysis == null) return@collect
+                val args = Bundle().apply {
+                    putFloat(ARG_RELATIVE_DBFS, analysis.relativeDbfs)
+                    putInt(ARG_LEVEL_BUCKET, analysis.levelBucket.ordinal)
+                    putString(ARG_SOUND_ID, analysis.suggestedSoundId.name)
+                    putFloat(ARG_CONFIDENCE, analysis.confidence)
+                    putFloatArray(ARG_MEL_ENERGIES, analysis.melBandEnergies.toFloatArray())
+                    putLong(ARG_CAPTURED_AT, analysis.capturedAtElapsedRealtime)
+                }
+                handler.post {
+                    latestAnalysis = analysis
+                    maybeAdapt(analysis)
+                    session.broadcastCustomCommand(
+                        SessionCommand(COMMAND_ANALYSIS_EVENT, Bundle.EMPTY),
+                        args,
+                    )
+                }
+            }
+        }
     }
 
-    override fun onBind(intent: Intent?): IBinder = binder
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = session
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_PLAY -> setPlaying(true)
-            ACTION_PAUSE -> setPlaying(false)
-            ACTION_STOP -> {
-                setPlaying(false)
-                stopCapture()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
-            ACTION_TOGGLE -> setPlaying(!playing)
-        }
-        return START_STICKY
+    override fun onTaskRemoved(rootIntent: android.content.Intent?) {
+        player.stopCapture()
+        uiForeground = false
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
-        abandonFocus()
-        engine.setPlaying(false)
-        engine.stopCapture()
-        _isRunning.value = false
+        handler.removeCallbacks(timerTick)
+        handler.removeCallbacks(breakReminderTick)
+        handler.removeCallbacksAndMessages(null)
+        player.stopCapture()
+        session.release()
+        player.release()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
-    fun configure(soundId: MaskingSoundId, vol: Float, shouldPlay: Boolean) {
-        sound = soundId
-        volume = vol
-        engine.setSound(soundId)
-        engine.setVolume(vol)
-        setPlaying(shouldPlay)
-        updateNotification()
-    }
+    private inner class SessionCallback : MediaSession.Callback {
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            val commands = SessionCommands.Builder()
+                .add(SessionCommand(COMMAND_SET_TIMER, Bundle.EMPTY))
+                .add(SessionCommand(COMMAND_SET_ADAPTIVE_MODE, Bundle.EMPTY))
+                .add(SessionCommand(COMMAND_SET_UI_FOREGROUND, Bundle.EMPTY))
+                .add(SessionCommand(COMMAND_ANALYSIS_EVENT, Bundle.EMPTY))
+                .add(SessionCommand(COMMAND_TIMER_EVENT, Bundle.EMPTY))
+                .add(SessionCommand(COMMAND_BREAK_REMINDER, Bundle.EMPTY))
+                .add(SessionCommand(COMMAND_GET_AUDIO_METRICS, Bundle.EMPTY))
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(commands)
+                .build()
+        }
 
-    fun setSound(soundId: MaskingSoundId, crossfade: Float = 0.35f) {
-        sound = soundId
-        engine.setSound(soundId, crossfade)
-        updateNotification()
-    }
-
-    fun setVolume(vol: Float) {
-        volume = vol
-        engine.setVolume(vol)
-    }
-
-    fun setPlaying(shouldPlay: Boolean) {
-        if (shouldPlay) {
-            if (!requestFocus()) {
-                playing = false
-                engine.setPlaying(false)
-                _isRunning.value = false
-                updateNotification()
-                return
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            when (customCommand.customAction) {
+                COMMAND_SET_TIMER -> {
+                    val durationMs = args.getLong(ARG_DURATION_MS, 0L)
+                    timerDeadlineElapsedRealtime = if (durationMs > 0L && player.isPlaying) {
+                        SystemClock.elapsedRealtime() + durationMs
+                    } else null
+                    timerRemainingWhenPausedMs =
+                        if (durationMs > 0L && !player.isPlaying) durationMs else null
+                    handler.removeCallbacks(timerTick)
+                    if (timerDeadlineElapsedRealtime != null && player.isPlaying) {
+                        handler.post(timerTick)
+                    }
+                    broadcastTimer()
+                }
+                COMMAND_SET_ADAPTIVE_MODE -> {
+                    adaptiveModeEnabled = args.getBoolean(ARG_ENABLED, true)
+                }
+                COMMAND_SET_UI_FOREGROUND -> {
+                    uiForeground = args.getBoolean(ARG_ENABLED, false)
+                    if (uiForeground && player.playWhenReady) player.startCapture()
+                    else player.stopCapture()
+                }
+                COMMAND_GET_AUDIO_METRICS -> {
+                    val metrics = Bundle().apply { putInt(ARG_XRUN_COUNT, player.xRunCount()) }
+                    return Futures.immediateFuture(
+                        SessionResult(SessionResult.RESULT_SUCCESS, metrics),
+                    )
+                }
+                else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
             }
-            engine.setPlaying(true)
-            playing = true
-            _isRunning.value = true
-        } else {
-            engine.setPlaying(false)
-            playing = false
-            _isRunning.value = false
-            abandonFocus()
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
-        updateNotification()
+
+        override fun onPlayerCommandRequest(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            @Player.Command playerCommand: Int,
+        ): Int {
+            if (playerCommand == Player.COMMAND_SET_MEDIA_ITEM && player.playWhenReady) {
+                manualOverride = true
+                manualBaseline = latestAnalysis?.melBandEnergies
+                manualShiftUpdates = 0
+            }
+            return SessionResult.RESULT_SUCCESS
+        }
     }
 
-    fun startCapture(): Boolean = engine.startCapture()
+    private fun broadcastTimer() {
+        val args = Bundle().apply {
+            putLong(ARG_TIMER_DEADLINE, timerDeadlineElapsedRealtime ?: 0L)
+            putLong(ARG_TIMER_REMAINING, timerRemainingWhenPausedMs ?: 0L)
+        }
+        session.broadcastCustomCommand(SessionCommand(COMMAND_TIMER_EVENT, Bundle.EMPTY), args)
+    }
 
-    fun stopCapture() = engine.stopCapture()
+    private fun maybeAdapt(analysis: NoiseAnalysis) {
+        if (!player.isPlaying) return
+        if (manualOverride) {
+            val baseline = manualBaseline ?: analysis.melBandEnergies.also { manualBaseline = it }
+            val distance = baseline.zip(analysis.melBandEnergies)
+                .sumOf { (before, after) -> abs(before - after).toDouble() }.toFloat()
+            manualShiftUpdates = if (distance > MANUAL_OVERRIDE_DISTANCE) {
+                manualShiftUpdates + 1
+            } else 0
+            if (manualShiftUpdates < MANUAL_OVERRIDE_UPDATES) return
+            manualOverride = false
+            manualBaseline = null
+            manualShiftUpdates = 0
+        }
+        val now = SystemClock.elapsedRealtime()
+        val suggested = analysis.suggestedSoundId
+        val improvement = maskingScore(suggested, analysis.melBandEnergies) -
+            maskingScore(player.currentSound, analysis.melBandEnergies)
+        if (!adaptiveModeEnabled || analysis.confidence < MIN_CONFIDENCE ||
+            improvement < REQUIRED_SCORE_IMPROVEMENT || suggested == player.currentSound ||
+            now < adaptiveCooldownUntil) return
+        if (candidateSound == suggested) candidateUpdates++ else {
+            candidateSound = suggested
+            candidateUpdates = 1
+        }
+        if (candidateUpdates < REQUIRED_STABLE_UPDATES) return
+        player.setSound(suggested)
+        adaptiveCooldownUntil = now + ADAPTIVE_COOLDOWN_MS
+        candidateSound = null
+        candidateUpdates = 0
+    }
 
-    fun isPlaying(): Boolean = playing
-
-    val estimate get() = engine.estimate
-
-    override fun onAudioFocusChange(focusChange: Int) {
-        when (focusChange) {
-            AudioManager.AUDIOFOCUS_LOSS,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            -> setPlaying(false)
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> engine.setVolume(volume * 0.3f)
-            AudioManager.AUDIOFOCUS_GAIN -> {
-                engine.setVolume(volume)
-                if (playing) engine.setPlaying(true)
+    private fun maskingScore(sound: MaskingSoundId, spectrum: List<Float>): Float {
+        if (spectrum.size != MEL_BANDS) return Float.NEGATIVE_INFINITY
+        val weights = FloatArray(MEL_BANDS) { band ->
+            val x = band / (MEL_BANDS - 1f)
+            when (sound) {
+                MaskingSoundId.WHITE_NOISE -> 0.70f + 0.30f * x
+                MaskingSoundId.PINK_NOISE -> 1.00f - 0.45f * x
+                MaskingSoundId.BROWN_NOISE -> 1.00f - 0.75f * x
+                MaskingSoundId.OCEAN_WAVES -> 0.70f + 0.25f * kotlin.math.sin(x * Math.PI).toFloat()
+                MaskingSoundId.RAIN -> 0.75f + 0.20f * x
+                MaskingSoundId.FAN -> 0.95f - 0.35f * x
+                MaskingSoundId.AIR_CONDITIONER -> 1.00f - 0.55f * x
+                MaskingSoundId.CAFE_AMBIENCE -> 0.70f + 0.30f * kotlin.math.sin(x * Math.PI).toFloat()
             }
         }
+        val total = weights.sum().coerceAtLeast(0.0001f)
+        return -spectrum.indices.sumOf {
+            abs(spectrum[it] - weights[it] / total).toDouble()
+        }.toFloat()
     }
-
-    private fun requestFocus(): Boolean {
-        val attrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-            .build()
-        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-            .setAudioAttributes(attrs)
-            .setOnAudioFocusChangeListener(this)
-            .setAcceptsDelayedFocusGain(true)
-            .build()
-        focusRequest = request
-        return audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-    }
-
-    private fun abandonFocus() {
-        focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
-        focusRequest = null
-    }
-
-    private fun createChannel() {
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.notification_channel_name),
-                NotificationManager.IMPORTANCE_LOW,
-            ),
-        )
-    }
-
-    private fun startAsForeground() {
-        val notification = buildNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            startForeground(NOTIFICATION_ID, notification)
-        }
-    }
-
-    private fun updateNotification() {
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, buildNotification())
-    }
-
-    private fun buildNotification(): Notification {
-        val open = pendingActivity()
-        val playPause = pendingAction(if (playing) ACTION_PAUSE else ACTION_PLAY)
-        val stop = pendingAction(ACTION_STOP)
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(R.string.notification_title))
-            .setContentText(
-                if (playing) {
-                    getString(R.string.notification_playing, sound.name.lowercase())
-                } else {
-                    getString(R.string.notification_paused)
-                },
-            )
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(open)
-            .setOngoing(playing)
-            .setSilent(true)
-            .addAction(
-                R.drawable.ic_notification,
-                getString(if (playing) R.string.action_pause else R.string.action_play),
-                playPause,
-            )
-            .addAction(R.drawable.ic_notification, getString(R.string.action_stop), stop)
-            .build()
-    }
-
-    private fun pendingActivity(): PendingIntent =
-        PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
-    private fun pendingAction(action: String): PendingIntent =
-        PendingIntent.getService(
-            this,
-            action.hashCode(),
-            Intent(this, MaskingPlaybackService::class.java).setAction(action),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
 
     companion object {
-        const val CHANNEL_ID = "masking_playback"
-        const val NOTIFICATION_ID = 42
-        const val ACTION_PLAY = "com.noiseshield.app.PLAY"
-        const val ACTION_PAUSE = "com.noiseshield.app.PAUSE"
-        const val ACTION_STOP = "com.noiseshield.app.STOP"
-        const val ACTION_TOGGLE = "com.noiseshield.app.TOGGLE"
-
-        private val _isRunning = MutableStateFlow(false)
-        val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
-
-        fun start(context: Context) {
-            val intent = Intent(context, MaskingPlaybackService::class.java)
-            context.startForegroundService(intent)
-        }
-
-        fun stop(context: Context) {
-            val intent = Intent(context, MaskingPlaybackService::class.java).setAction(ACTION_STOP)
-            context.startService(intent)
-        }
+        const val COMMAND_SET_TIMER = "com.noiseshield.app.SET_TIMER"
+        const val COMMAND_SET_ADAPTIVE_MODE = "com.noiseshield.app.SET_ADAPTIVE_MODE"
+        const val COMMAND_SET_UI_FOREGROUND = "com.noiseshield.app.SET_UI_FOREGROUND"
+        const val COMMAND_ANALYSIS_EVENT = "com.noiseshield.app.ANALYSIS_EVENT"
+        const val COMMAND_TIMER_EVENT = "com.noiseshield.app.TIMER_EVENT"
+        const val COMMAND_BREAK_REMINDER = "com.noiseshield.app.BREAK_REMINDER"
+        const val COMMAND_GET_AUDIO_METRICS = "com.noiseshield.app.GET_AUDIO_METRICS"
+        const val ARG_DURATION_MS = "duration_ms"
+        const val ARG_ENABLED = "enabled"
+        const val ARG_RELATIVE_DBFS = "relative_dbfs"
+        const val ARG_LEVEL_BUCKET = "level_bucket"
+        const val ARG_SOUND_ID = "sound_id"
+        const val ARG_CONFIDENCE = "confidence"
+        const val ARG_MEL_ENERGIES = "mel_energies"
+        const val ARG_CAPTURED_AT = "captured_at"
+        const val ARG_TIMER_DEADLINE = "timer_deadline"
+        const val ARG_TIMER_REMAINING = "timer_remaining"
+        const val ARG_XRUN_COUNT = "xrun_count"
+        private const val TIMER_TICK_MS = 1_000L
+        private const val BREAK_REMINDER_TICK_MS = 60_000L
+        private const val BREAK_REMINDER_DELAY_MS = 60 * 60 * 1_000L
+        private const val PAUSED_SERVICE_STOP_DELAY_MS = 30_000L
+        private const val MEL_BANDS = 24
+        private const val MIN_CONFIDENCE = 0.03f
+        private const val REQUIRED_SCORE_IMPROVEMENT = 0.10f
+        private const val REQUIRED_STABLE_UPDATES = 3
+        private const val ADAPTIVE_COOLDOWN_MS = 15_000L
+        private const val MANUAL_OVERRIDE_DISTANCE = 0.25f
+        private const val MANUAL_OVERRIDE_UPDATES = 5
     }
 }

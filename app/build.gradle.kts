@@ -1,17 +1,17 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
     namespace = "com.noiseshield.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.noiseshield.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
 
@@ -57,24 +57,26 @@ android {
 dependencies {
     implementation(project(":audio-engine"))
 
-    val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
+    implementation(libs.core.ktx)
+    implementation(libs.appcompat)
+    implementation(libs.activity.compose)
+    implementation(libs.compose.foundation)
+    implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.core)
+    implementation(libs.navigation.compose)
+    implementation(libs.datastore.preferences)
+    implementation(libs.coroutines.android)
+    implementation(libs.media3.common)
+    implementation(libs.media3.session)
 
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.activity:activity-compose:1.9.3")
-    implementation("androidx.compose.foundation:foundation")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.navigation:navigation-compose:2.8.4")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    debugImplementation(libs.compose.ui.tooling)
+}
 
-    debugImplementation("androidx.compose.ui:ui-tooling")
+dependencyLocking {
+    lockAllConfigurations()
 }

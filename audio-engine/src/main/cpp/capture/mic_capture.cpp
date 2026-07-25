@@ -1,102 +1,123 @@
 #include "capture/mic_capture.h"
 
-#include <android/log.h>
-
 #include <algorithm>
-#include <cstring>
-
-#define LOG_TAG "MicCapture"
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#include <chrono>
 
 namespace noise {
 
-MicCapture::MicCapture() {
-    ring_.assign(kWindowFrames, 0.0f);
-}
+MicCapture::MicCapture() : restartThread_(&MicCapture::restartLoop, this) {}
 
 MicCapture::~MicCapture() {
+    shuttingDown_.store(true);
+    restartCondition_.notify_one();
+    if (restartThread_.joinable()) restartThread_.join();
     stop();
 }
 
-bool MicCapture::start(int32_t sampleRate) {
-    stop();
-    sampleRate_ = sampleRate;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        ring_.assign(kWindowFrames, 0.0f);
-        writePos_ = 0;
-        filled_ = 0;
-    }
+bool MicCapture::start() {
+    desiredRunning_.store(true);
+    std::lock_guard<std::mutex> lock(lifecycleMutex_);
+    if (stream_) return true;
+    writeSequence_.store(0);
+    return openStreamLocked();
+}
 
+bool MicCapture::openStreamLocked() {
     oboe::AudioStreamBuilder builder;
     builder.setDirection(oboe::Direction::Input)
             ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
             ->setSharingMode(oboe::SharingMode::Exclusive)
-            ->setFormat(oboe::AudioFormat::Float)
             ->setChannelCount(oboe::ChannelCount::Mono)
-            ->setSampleRate(sampleRate_)
-            ->setInputPreset(oboe::InputPreset::VoicePerformance)
+            ->setInputPreset(oboe::InputPreset::Unprocessed)
             ->setDataCallback(this)
             ->setErrorCallback(this);
 
     oboe::Result result = builder.openStream(stream_);
     if (result != oboe::Result::OK) {
-        // Fallback shared mode
-        builder.setSharingMode(oboe::SharingMode::Shared);
+        builder.setInputPreset(oboe::InputPreset::Generic)
+                ->setSharingMode(oboe::SharingMode::Shared);
         result = builder.openStream(stream_);
-        if (result != oboe::Result::OK) {
-            LOGE("open input failed: %s", oboe::convertToText(result));
-            return false;
-        }
     }
-
+    if (result != oboe::Result::OK || !stream_) return false;
+    sampleRate_.store(stream_->getSampleRate());
     result = stream_->requestStart();
     if (result != oboe::Result::OK) {
-        LOGE("start input failed: %s", oboe::convertToText(result));
+        stream_->close();
         stream_.reset();
         return false;
     }
     running_.store(true);
+    restartRequested_.store(false);
     return true;
 }
 
 void MicCapture::stop() {
+    desiredRunning_.store(false);
+    restartRequested_.store(false);
+    recovering_.store(false);
     running_.store(false);
-    if (stream_) {
-        stream_->stop();
-        stream_->close();
-        stream_.reset();
-    }
+    std::lock_guard<std::mutex> lock(lifecycleMutex_);
+    if (!stream_) return;
+    stream_->stop();
+    stream_->close();
+    stream_.reset();
 }
 
-int32_t MicCapture::copyLatestWindow(float *dst, int32_t maxFrames) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (filled_ <= 0 || dst == nullptr || maxFrames <= 0) return 0;
-    const int32_t n = std::min(maxFrames, filled_);
-    const int32_t start = (writePos_ - n + kWindowFrames) % kWindowFrames;
-    for (int32_t i = 0; i < n; ++i) {
-        dst[i] = ring_[(start + i) % kWindowFrames];
+int32_t MicCapture::copyLatestWindow(float *dst, int32_t maxFrames) const {
+    if (!dst || maxFrames <= 0) return 0;
+    const uint64_t end = writeSequence_.load(std::memory_order_acquire);
+    const int32_t count = static_cast<int32_t>(
+            std::min<uint64_t>(std::min<uint32_t>(maxFrames, kRingFrames), end));
+    const uint64_t start = end - count;
+    for (int32_t i = 0; i < count; ++i) {
+        dst[i] = ring_[(start + static_cast<uint64_t>(i)) % kRingFrames];
     }
-    return n;
+    return count;
 }
 
 oboe::DataCallbackResult MicCapture::onAudioReady(
-        oboe::AudioStream * /*stream*/,
-        void *audioData,
-        int32_t numFrames) {
-    auto *in = static_cast<float *>(audioData);
-    std::lock_guard<std::mutex> lock(mutex_);
+        oboe::AudioStream *stream, void *audioData, int32_t numFrames) {
+    const bool floatInput = stream->getFormat() == oboe::AudioFormat::Float;
+    const auto *inputFloat = static_cast<const float *>(audioData);
+    const auto *inputI16 = static_cast<const int16_t *>(audioData);
+    uint64_t sequence = writeSequence_.load(std::memory_order_relaxed);
     for (int32_t i = 0; i < numFrames; ++i) {
-        ring_[writePos_] = in[i];
-        writePos_ = (writePos_ + 1) % kWindowFrames;
-        filled_ = std::min(filled_ + 1, kWindowFrames);
+        ring_[sequence % kRingFrames] =
+                floatInput ? inputFloat[i] : inputI16[i] / 32768.0f;
+        ++sequence;
     }
+    writeSequence_.store(sequence, std::memory_order_release);
     return oboe::DataCallbackResult::Continue;
 }
 
-void MicCapture::onErrorAfterClose(oboe::AudioStream * /*stream*/, oboe::Result error) {
-    LOGE("mic error: %s", oboe::convertToText(error));
-    running_.store(false);
+void MicCapture::onErrorAfterClose(oboe::AudioStream *, oboe::Result) {
+    running_.store(false, std::memory_order_release);
+    recovering_.store(true, std::memory_order_release);
+    restartRequested_.store(true, std::memory_order_release);
+    restartCondition_.notify_one();
+}
+
+void MicCapture::restartLoop() {
+    std::mutex waitMutex;
+    std::unique_lock<std::mutex> waitLock(waitMutex);
+    while (!shuttingDown_.load()) {
+        restartCondition_.wait(waitLock, [this] {
+            return shuttingDown_.load() || restartRequested_.load();
+        });
+        if (shuttingDown_.load()) break;
+        restartRequested_.store(false);
+        if (!desiredRunning_.load()) continue;
+        std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
+        if (stream_) {
+            stream_->close();
+            stream_.reset();
+        }
+        if (openStreamLocked()) recovering_.store(false, std::memory_order_release);
+        else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            restartRequested_.store(true, std::memory_order_release);
+        }
+    }
 }
 
 }  // namespace noise

@@ -1,50 +1,31 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
-#include <string>
 
 namespace noise {
 
-enum class LevelBucket : int32_t {
-    Low = 0,
-    Medium = 1,
-    High = 2,
-};
+enum class LevelBucket : int32_t { Low = 0, Medium = 1, High = 2 };
 
-enum class BroadProfile : int32_t {
-    Fan = 0,
-    Traffic = 1,
-    Cafe = 2,
-    Rain = 3,
-    AirConditioner = 4,
-    WhiteNoise = 5,
-    Unknown = 6,
-};
-
-struct NoiseEstimate {
+struct NoiseAnalysis {
+    float relativeDbfs = -100.0f;
     LevelBucket levelBucket = LevelBucket::Low;
-    float rmsDb = -100.0f;
-    BroadProfile broadProfile = BroadProfile::Unknown;
+    int32_t suggestedSoundId = 0;
     float confidence = 0.0f;
+    std::array<float, 24> melBandEnergies{};
+    float spectralCentroid = 0.0f;
+    float spectralFlatness = 0.0f;
+    std::array<float, 3> bandRatios{};
 };
 
 class HeuristicAnalyzer {
 public:
-    NoiseEstimate analyze(const float *samples, int32_t frameCount) const;
+    NoiseAnalysis analyze(const float *samples, int32_t frameCount);
 
 private:
-    static float computeRms(const float *samples, int32_t frameCount);
-    static float rmsToDb(float rms);
-    static LevelBucket bucketize(float rmsDb);
-    static void extractBandRatios(
-            const float *samples,
-            int32_t frameCount,
-            float &low,
-            float &mid,
-            float &high);
+    std::array<float, 24> smoothedMel_{};
+    float smoothedDbfs_ = -100.0f;
+    bool hasSmoothed_ = false;
 };
-
-const char *profileToString(BroadProfile profile);
-const char *levelToString(LevelBucket level);
 
 }  // namespace noise

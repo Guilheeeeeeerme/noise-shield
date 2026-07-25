@@ -1,10 +1,12 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cstdint>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
-#include <vector>
+#include <thread>
 
 #include <oboe/Oboe.h>
 
@@ -16,29 +18,33 @@ public:
     MicCapture();
     ~MicCapture() override;
 
-    bool start(int32_t sampleRate = 16000);
+    bool start();
     void stop();
     bool isRunning() const { return running_.load(); }
-
-    /** Copy latest mono window into dst; returns frames copied. */
-    int32_t copyLatestWindow(float *dst, int32_t maxFrames);
+    bool isRecovering() const { return recovering_.load(std::memory_order_acquire); }
+    int32_t sampleRate() const { return sampleRate_.load(); }
+    int32_t copyLatestWindow(float *dst, int32_t maxFrames) const;
 
     oboe::DataCallbackResult onAudioReady(
-            oboe::AudioStream *stream,
-            void *audioData,
-            int32_t numFrames) override;
-
+            oboe::AudioStream *stream, void *audioData, int32_t numFrames) override;
     void onErrorAfterClose(oboe::AudioStream *stream, oboe::Result error) override;
 
 private:
+    bool openStreamLocked();
+    void restartLoop();
+    static constexpr uint32_t kRingFrames = 65536;
     std::shared_ptr<oboe::AudioStream> stream_;
-    std::mutex mutex_;
+    std::mutex lifecycleMutex_;
+    std::condition_variable restartCondition_;
+    std::thread restartThread_;
+    std::array<float, kRingFrames> ring_{};
+    std::atomic<uint64_t> writeSequence_{0};
+    std::atomic<int32_t> sampleRate_{16000};
     std::atomic<bool> running_{false};
-    std::vector<float> ring_;
-    int32_t writePos_ = 0;
-    int32_t filled_ = 0;
-    int32_t sampleRate_ = 16000;
-    static constexpr int32_t kWindowFrames = 16000;  // ~1s @ 16k
+    std::atomic<bool> restartRequested_{false};
+    std::atomic<bool> desiredRunning_{false};
+    std::atomic<bool> shuttingDown_{false};
+    std::atomic<bool> recovering_{false};
 };
 
 }  // namespace noise

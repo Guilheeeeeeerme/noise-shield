@@ -10,32 +10,31 @@ class NativeAudioEngine {
 
     fun setPlaying(playing: Boolean) = nativeSetPlaying(playing)
     fun setVolume(volume: Float) = nativeSetVolume(volume)
-    fun setSound(soundId: Int, crossfadeSeconds: Float = 0.35f) =
+    fun setSound(soundId: Int, crossfadeSeconds: Float = 0.75f) =
         nativeSetSound(soundId, crossfadeSeconds)
-
-    fun loadPcm(soundId: Int, samples: FloatArray, sampleRate: Int) =
-        nativeLoadPcm(soundId, samples, sampleRate)
+    fun loadPcm16(soundId: Int, samples: ShortArray, sampleRate: Int) =
+        nativeLoadPcm16(soundId, samples, sampleRate)
 
     fun startCapture(): Boolean = nativeStartCapture()
     fun stopCapture() = nativeStopCapture()
 
-    /**
-     * Returns float[4] = [levelBucket, rmsDb, broadProfile, confidence], or null.
-     */
+    /** Returns [relative dBFS, level bucket, sound ID, confidence, 24 mel energies]. */
     fun pollEstimate(): FloatArray? = nativePollEstimate()
 
-    fun isPlaying(): Boolean = nativeIsPlaying()
+    fun pollRecoveryState(): Int = nativePollRecoveryState()
+    fun getXRunCount(): Int = nativeGetXRunCount()
 
     private external fun nativeInit(): Boolean
     private external fun nativeRelease()
     private external fun nativeSetPlaying(playing: Boolean)
     private external fun nativeSetVolume(volume: Float)
     private external fun nativeSetSound(soundId: Int, crossfadeSeconds: Float)
-    private external fun nativeLoadPcm(soundId: Int, samples: FloatArray, sampleRate: Int)
+    private external fun nativeLoadPcm16(soundId: Int, samples: ShortArray, sampleRate: Int)
     private external fun nativeStartCapture(): Boolean
     private external fun nativeStopCapture()
     private external fun nativePollEstimate(): FloatArray?
-    private external fun nativeIsPlaying(): Boolean
+    private external fun nativePollRecoveryState(): Int
+    private external fun nativeGetXRunCount(): Int
 
     companion object {
         init {

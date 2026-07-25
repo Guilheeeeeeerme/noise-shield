@@ -17,22 +17,24 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 data class UserPreferences(
     val onboardingDone: Boolean = false,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
-    val language: AppLanguage = AppLanguage.ENGLISH,
     val lastSound: MaskingSoundId = MaskingSoundId.WHITE_NOISE,
-    val lastVolume: Float = 0.5f,
+    val lastVolume: Float = 0.3f,
     val favorites: Set<MaskingSoundId> = emptySet(),
-    val lastFeedbackHelped: Boolean? = null,
+    val adaptiveModeEnabled: Boolean = true,
+    val safetyWarningAcknowledged: Boolean = false,
+    val feedbackCounters: Map<MaskingSoundId, Pair<Int, Int>> = emptyMap(),
 )
 
 class PreferencesRepository(private val context: Context) {
     private object Keys {
         val onboardingDone = booleanPreferencesKey("onboarding_done")
         val themeMode = stringPreferencesKey("theme_mode")
-        val language = stringPreferencesKey("language")
         val lastSound = stringPreferencesKey("last_sound")
         val lastVolume = floatPreferencesKey("last_volume")
         val favorites = stringSetPreferencesKey("favorites")
-        val lastFeedback = stringPreferencesKey("last_feedback")
+        val adaptiveModeEnabled = booleanPreferencesKey("adaptive_mode_enabled")
+        val safetyWarningAcknowledged = booleanPreferencesKey("safety_warning_acknowledged")
+        val feedbackCounters = stringSetPreferencesKey("feedback_counters")
     }
 
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
@@ -41,19 +43,16 @@ class PreferencesRepository(private val context: Context) {
             themeMode = runCatching {
                 AppThemeMode.valueOf(prefs[Keys.themeMode] ?: AppThemeMode.SYSTEM.name)
             }.getOrDefault(AppThemeMode.SYSTEM),
-            language = AppLanguage.fromTag(prefs[Keys.language] ?: AppLanguage.ENGLISH.tag),
             lastSound = runCatching {
                 MaskingSoundId.valueOf(prefs[Keys.lastSound] ?: MaskingSoundId.WHITE_NOISE.name)
             }.getOrDefault(MaskingSoundId.WHITE_NOISE),
-            lastVolume = prefs[Keys.lastVolume] ?: 0.5f,
+            lastVolume = (prefs[Keys.lastVolume] ?: 0.3f).coerceIn(0f, 1f),
             favorites = (prefs[Keys.favorites] ?: emptySet()).mapNotNull {
                 runCatching { MaskingSoundId.valueOf(it) }.getOrNull()
             }.toSet(),
-            lastFeedbackHelped = when (prefs[Keys.lastFeedback]) {
-                "yes" -> true
-                "no" -> false
-                else -> null
-            },
+            adaptiveModeEnabled = prefs[Keys.adaptiveModeEnabled] ?: true,
+            safetyWarningAcknowledged = prefs[Keys.safetyWarningAcknowledged] ?: false,
+            feedbackCounters = decodeFeedbackCounters(prefs[Keys.feedbackCounters].orEmpty()),
         )
     }
 
@@ -65,16 +64,12 @@ class PreferencesRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.themeMode] = mode.name }
     }
 
-    suspend fun setLanguage(language: AppLanguage) {
-        context.dataStore.edit { it[Keys.language] = language.tag }
-    }
-
     suspend fun setLastSound(sound: MaskingSoundId) {
         context.dataStore.edit { it[Keys.lastSound] = sound.name }
     }
 
     suspend fun setLastVolume(volume: Float) {
-        context.dataStore.edit { it[Keys.lastVolume] = volume }
+        context.dataStore.edit { it[Keys.lastVolume] = volume.coerceIn(0f, 1f) }
     }
 
     suspend fun toggleFavorite(sound: MaskingSoundId) {
@@ -85,7 +80,34 @@ class PreferencesRepository(private val context: Context) {
         }
     }
 
-    suspend fun setFeedbackHelped(helped: Boolean) {
-        context.dataStore.edit { it[Keys.lastFeedback] = if (helped) "yes" else "no" }
+    suspend fun setAdaptiveModeEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.adaptiveModeEnabled] = enabled }
     }
+
+    suspend fun acknowledgeSafetyWarning() {
+        context.dataStore.edit { it[Keys.safetyWarningAcknowledged] = true }
+    }
+
+    suspend fun recordFeedback(sound: MaskingSoundId, helped: Boolean) {
+        context.dataStore.edit { prefs ->
+            val counters = decodeFeedbackCounters(prefs[Keys.feedbackCounters].orEmpty()).toMutableMap()
+            val current = counters[sound] ?: (0 to 0)
+            counters[sound] = if (helped) current.copy(first = current.first + 1)
+            else current.copy(second = current.second + 1)
+            prefs[Keys.feedbackCounters] = counters.map { (id, value) ->
+                "${id.name}:${value.first}:${value.second}"
+            }.toSet()
+        }
+    }
+
+    private fun decodeFeedbackCounters(values: Set<String>): Map<MaskingSoundId, Pair<Int, Int>> =
+        values.mapNotNull { encoded ->
+            val parts = encoded.split(':')
+            if (parts.size != 3) return@mapNotNull null
+            val sound = runCatching { MaskingSoundId.valueOf(parts[0]) }.getOrNull()
+                ?: return@mapNotNull null
+            val helped = parts[1].toIntOrNull()?.coerceAtLeast(0) ?: return@mapNotNull null
+            val notHelped = parts[2].toIntOrNull()?.coerceAtLeast(0) ?: return@mapNotNull null
+            sound to (helped to notHelped)
+        }.toMap()
 }

@@ -34,6 +34,7 @@ import com.noiseshield.app.data.UserPreferences
 @Composable
 fun SettingsScreen(
     prefs: UserPreferences,
+    currentLanguage: AppLanguage,
     onBack: () -> Unit,
     onTheme: (AppThemeMode) -> Unit,
     onLanguage: (AppLanguage) -> Unit,
@@ -83,12 +84,12 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
-                    selected = prefs.language == AppLanguage.ENGLISH,
+                    selected = currentLanguage == AppLanguage.ENGLISH,
                     onClick = { onLanguage(AppLanguage.ENGLISH) },
                     label = { Text(stringResource(R.string.lang_en)) },
                 )
                 FilterChip(
-                    selected = prefs.language == AppLanguage.PORTUGUESE,
+                    selected = currentLanguage == AppLanguage.PORTUGUESE,
                     onClick = { onLanguage(AppLanguage.PORTUGUESE) },
                     label = { Text(stringResource(R.string.lang_pt)) },
                 )

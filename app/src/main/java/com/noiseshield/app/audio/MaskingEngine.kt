@@ -1,9 +1,9 @@
 package com.noiseshield.app.audio
 
-import com.noiseshield.app.data.BroadProfile
 import com.noiseshield.app.data.MaskingSoundId
-import com.noiseshield.app.data.NoiseEstimate
+import com.noiseshield.app.data.NoiseAnalysis
 import com.noiseshield.app.data.NoiseLevelBucket
+import android.os.SystemClock
 import com.noiseshield.audio.NativeAudioEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,20 +23,35 @@ class MaskingEngine(
     private val scope: CoroutineScope,
     private val native: NativeAudioEngine = NativeAudioEngine(),
 ) {
-    private val _estimate = MutableStateFlow<NoiseEstimate?>(null)
-    val estimate: StateFlow<NoiseEstimate?> = _estimate.asStateFlow()
+    private val _estimate = MutableStateFlow<NoiseAnalysis?>(null)
+    val estimate: StateFlow<NoiseAnalysis?> = _estimate.asStateFlow()
+    private val _recoveryState = MutableStateFlow(0)
+    val recoveryState: StateFlow<Int> = _recoveryState.asStateFlow()
 
     private var pollJob: Job? = null
+    private var recoveryJob: Job? = null
     private var initialized = false
 
     fun init(): Boolean {
         if (initialized) return true
         initialized = native.init()
+        if (initialized) {
+            recoveryJob?.cancel()
+            recoveryJob = scope.launch(Dispatchers.IO) {
+                while (isActive) {
+                    _recoveryState.value = native.pollRecoveryState()
+                    delay(250)
+                }
+            }
+        }
         return initialized
     }
 
     fun release() {
         stopCapture()
+        recoveryJob?.cancel()
+        recoveryJob = null
+        _recoveryState.value = 0
         native.release()
         initialized = false
     }
@@ -45,11 +60,15 @@ class MaskingEngine(
 
     fun setVolume(volume: Float) = native.setVolume(volume)
 
-    fun setSound(sound: MaskingSoundId, crossfadeSeconds: Float = 0.35f) {
+    fun setSound(sound: MaskingSoundId, crossfadeSeconds: Float = 0.75f) {
         native.setSound(sound.index, crossfadeSeconds)
     }
 
-    fun isPlaying(): Boolean = native.isPlaying()
+    fun loadPcm16(sound: MaskingSoundId, samples: ShortArray, sampleRate: Int) {
+        native.loadPcm16(sound.index, samples, sampleRate)
+    }
+
+    fun xRunCount(): Int = native.getXRunCount()
 
     fun startCapture(): Boolean {
         val ok = native.startCapture()
@@ -58,12 +77,14 @@ class MaskingEngine(
             pollJob = scope.launch(Dispatchers.Default) {
                 while (isActive) {
                     val raw = withContext(Dispatchers.IO) { native.pollEstimate() }
-                    if (raw != null && raw.size >= 4) {
-                        _estimate.value = NoiseEstimate(
-                            levelBucket = NoiseLevelBucket.fromOrdinal(raw[0].toInt()),
-                            rmsDb = raw[1],
-                            broadProfile = BroadProfile.fromOrdinal(raw[2].toInt()),
+                    if (raw != null && raw.size >= 28) {
+                        _estimate.value = NoiseAnalysis(
+                            relativeDbfs = raw[0],
+                            levelBucket = NoiseLevelBucket.fromOrdinal(raw[1].toInt()),
+                            suggestedSoundId = MaskingSoundId.fromIndex(raw[2].toInt()),
                             confidence = raw[3],
+                            melBandEnergies = raw.copyOfRange(4, 28).toList(),
+                            capturedAtElapsedRealtime = SystemClock.elapsedRealtime(),
                         )
                     }
                     delay(1_000)
