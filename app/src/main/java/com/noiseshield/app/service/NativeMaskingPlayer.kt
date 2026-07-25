@@ -48,12 +48,19 @@ class NativeMaskingPlayer(
     private var resumeAfterTransientLoss = false
     private var selectedSound = MaskingSoundId.WHITE_NOISE
     private var volume = 0.3f
+    /** Ambient-linked intensity under the user volume ceiling (1 = full slider). */
+    private var ambientScale = 1f
+    /** Audio-focus duck multiplier (1 = unducked). */
+    private var focusDuck = 1f
     private var focusRequest: AudioFocusRequest? = null
     private var recoveryObserver: Job? = null
     private var decodeJob: Job? = null
 
     val estimate get() = engine.estimate
     val currentSound get() = selectedSound
+    /** Fraction of user volume currently applied after ambient + focus. */
+    val maskIntensity: Float
+        get() = (ambientScale * focusDuck).coerceIn(0f, 1f)
 
     init {
         recoveryObserver = scope.launch {
@@ -141,6 +148,7 @@ class NativeMaskingPlayer(
             this.playWhenReady = false
             focusSuppressed = false
             resumeAfterTransientLoss = false
+            focusDuck = 1f
             engine.setPlaying(false)
             abandonAudioFocus()
             handler.postDelayed(releaseEngine, ENGINE_RELEASE_DELAY_MS)
@@ -152,8 +160,10 @@ class NativeMaskingPlayer(
     override fun handleStop(): ListenableFuture<*> {
         playWhenReady = false
         playWhenReadyChangeReason = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
+        focusDuck = 1f
         engine.setPlaying(false)
         engine.stopCapture()
+        resetAmbientScale()
         abandonAudioFocus()
         handler.removeCallbacks(releaseEngine)
         handler.postDelayed(releaseEngine, ENGINE_RELEASE_DELAY_MS)
@@ -171,9 +181,23 @@ class NativeMaskingPlayer(
         volumeOperationType: Int,
     ): ListenableFuture<*> {
         this.volume = volume.coerceIn(0f, 1f)
-        engine.setVolume(this.volume)
+        applyEffectiveVolume()
         invalidateState()
         return Futures.immediateVoidFuture()
+    }
+
+    /**
+     * Sets ambient intensity (0..1). Quiet rooms use a low scale so the mask
+     * stays under the user volume ceiling without exceeding it.
+     */
+    fun setAmbientScale(scale: Float) {
+        ambientScale = scale.coerceIn(0f, 1f)
+        applyEffectiveVolume()
+    }
+
+    fun resetAmbientScale() {
+        ambientScale = 1f
+        applyEffectiveVolume()
     }
 
     override fun handleSetMediaItems(
@@ -198,7 +222,11 @@ class NativeMaskingPlayer(
 
     fun startCapture(): Boolean = initialized && engine.startCapture()
 
-    fun stopCapture() = engine.stopCapture()
+    fun stopCapture() {
+        engine.stopCapture()
+        resetAmbientScale()
+    }
+
     fun xRunCount(): Int = engine.xRunCount()
 
     override fun onAudioFocusChange(focusChange: Int) {
@@ -206,7 +234,8 @@ class NativeMaskingPlayer(
             when (focusChange) {
                 AudioManager.AUDIOFOCUS_GAIN -> {
                     focusSuppressed = false
-                    engine.setVolume(volume)
+                    focusDuck = 1f
+                    applyEffectiveVolume()
                     if (playWhenReady && resumeAfterTransientLoss) engine.setPlaying(true)
                     resumeAfterTransientLoss = false
                 }
@@ -217,11 +246,13 @@ class NativeMaskingPlayer(
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                     focusSuppressed = false
-                    engine.setVolume(volume * DUCK_FACTOR)
+                    focusDuck = DUCK_FACTOR
+                    applyEffectiveVolume()
                 }
                 AudioManager.AUDIOFOCUS_LOSS -> {
                     resumeAfterTransientLoss = false
                     focusSuppressed = false
+                    focusDuck = 1f
                     playWhenReady = false
                     playWhenReadyChangeReason =
                         Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS
@@ -232,6 +263,12 @@ class NativeMaskingPlayer(
             }
             invalidateState()
         }
+    }
+
+    private fun applyEffectiveVolume() {
+        if (!initialized) return
+        val effective = (volume * ambientScale * focusDuck).coerceIn(0f, 1f)
+        engine.setVolume(effective)
     }
 
     fun releaseNative() {
@@ -257,7 +294,7 @@ class NativeMaskingPlayer(
         )
         if (initialized) {
             prepareSound(selectedSound, 0f)
-            engine.setVolume(volume)
+            applyEffectiveVolume()
         }
     }
 

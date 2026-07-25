@@ -117,9 +117,25 @@ fun SessionScreen(
 
             NoiseLevelIndicator(
                 level = state.estimate?.levelBucket,
+                relativeDbfs = state.estimate?.relativeDbfs,
+                maskIntensity = state.maskIntensity,
+                melEnergies = state.estimate?.melBandEnergies.orEmpty(),
                 suggestedSound = state.estimate?.suggestedSoundId,
                 limited = state.limitedMode,
             )
+
+            val adaptiveSwitchTo = state.adaptiveSwitchTo
+            if (adaptiveSwitchTo != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(
+                        R.string.adaptive_switching,
+                        soundLabel(adaptiveSwitchTo),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
 
             Spacer(Modifier.height(24.dp))
 
@@ -332,15 +348,17 @@ fun SessionScreen(
 @Composable
 private fun NoiseLevelIndicator(
     level: NoiseLevelBucket?,
+    relativeDbfs: Float?,
+    maskIntensity: Float?,
+    melEnergies: List<Float>,
     suggestedSound: MaskingSoundId?,
     limited: Boolean,
 ) {
-    val fill = when (level) {
-        NoiseLevelBucket.LOW -> 0.25f
-        NoiseLevelBucket.MEDIUM -> 0.55f
-        NoiseLevelBucket.HIGH -> 0.9f
-        null -> 0.1f
+    val continuousFill = when {
+        limited || relativeDbfs == null -> 0.1f
+        else -> dbfsToMeterFill(relativeDbfs)
     }
+    val intensity = maskIntensity?.coerceIn(0f, 1f)
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
@@ -352,9 +370,13 @@ private fun NoiseLevelIndicator(
         ) {
             Box(
                 modifier = Modifier
-                    .size((20 + (80 * fill)).dp)
+                    .size((20 + (80 * continuousFill)).dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f + fill * 0.4f)),
+                    .background(
+                        MaterialTheme.colorScheme.primary.copy(
+                            alpha = 0.35f + continuousFill * 0.4f,
+                        ),
+                    ),
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -370,7 +392,58 @@ private fun NoiseLevelIndicator(
             },
             style = MaterialTheme.typography.bodySmall,
         )
+        if (!limited && intensity != null) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(
+                    R.string.mask_intensity_status,
+                    (intensity * 100f).toInt().coerceIn(0, 100),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (!limited && melEnergies.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            MelSpectrumStrip(energies = melEnergies)
+        }
     }
+}
+
+@Composable
+private fun MelSpectrumStrip(energies: List<Float>) {
+    val max = energies.maxOrNull()?.coerceAtLeast(1e-6f) ?: 1f
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        energies.forEach { energy ->
+            val heightFraction = (energy / max).coerceIn(0.08f, 1f)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height((28 * heightFraction).dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(
+                        MaterialTheme.colorScheme.primary.copy(
+                            alpha = 0.55f + heightFraction * 0.35f,
+                        ),
+                    ),
+            )
+        }
+    }
+}
+
+private fun dbfsToMeterFill(relativeDbfs: Float): Float {
+    // Map roughly -60..-10 dBFS to 0.1..1.0 for the meter disc.
+    val t = ((relativeDbfs + 60f) / 50f).coerceIn(0f, 1f)
+    return 0.1f + t * 0.9f
 }
 
 @Composable

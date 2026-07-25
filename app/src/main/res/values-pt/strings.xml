@@ -49,7 +49,7 @@
     <string name="label_timer">Temporizador</string>
     <string name="label_sounds">Sons</string>
     <string name="label_adaptive_mode">Modo adaptativo</string>
-    <string name="adaptive_mode_description">Troca automaticamente somente quando uma máscara melhor permanece estável.</string>
+    <string name="adaptive_mode_description">Acompanha o nível do ambiente (mais baixo quando quieto) e troca a máscara só quando um ajuste melhor permanece estável.</string>
     <string name="timer_off">Off</string>
     <string name="timer_15">15m</string>
     <string name="timer_30">30m</string>
@@ -57,6 +57,8 @@
     <string name="timer_remaining">%1$d:%2$02d restantes</string>
     <string name="analysis_unavailable">Análise indisponível</string>
     <string name="analysis_status">Nível relativo %1$s · máscara sugerida %2$s</string>
+    <string name="mask_intensity_status">Intensidade da máscara %1$d%% do volume</string>
+    <string name="adaptive_switching">Trocando máscara para %1$s…</string>
     <string name="level_low">baixo</string>
     <string name="level_medium">médio</string>
     <string name="level_high">alto</string>

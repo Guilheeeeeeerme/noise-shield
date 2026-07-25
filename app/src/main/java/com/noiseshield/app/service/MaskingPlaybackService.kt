@@ -39,6 +39,8 @@ class MaskingPlaybackService : MediaSessionService() {
     private var adaptiveCooldownUntil = 0L
     private var breakReminderDeadline = 0L
     private var breakReminderSent = false
+    private var smoothedAmbientScale = 1f
+    private var hasAmbientScale = false
     private val stopPausedService = Runnable {
         if (!player.playWhenReady) stopSelf()
     }
@@ -86,6 +88,7 @@ class MaskingPlaybackService : MediaSessionService() {
                     if (uiForeground) player.startCapture()
                 } else {
                     player.stopCapture()
+                    resetAmbientIntensity()
                     handler.postDelayed(stopPausedService, PAUSED_SERVICE_STOP_DELAY_MS)
                 }
             }
@@ -117,17 +120,20 @@ class MaskingPlaybackService : MediaSessionService() {
         serviceScope.launch {
             player.estimate.collect { analysis ->
                 if (analysis == null) return@collect
-                val args = Bundle().apply {
-                    putFloat(ARG_RELATIVE_DBFS, analysis.relativeDbfs)
-                    putInt(ARG_LEVEL_BUCKET, analysis.levelBucket.ordinal)
-                    putString(ARG_SOUND_ID, analysis.suggestedSoundId.name)
-                    putFloat(ARG_CONFIDENCE, analysis.confidence)
-                    putFloatArray(ARG_MEL_ENERGIES, analysis.melBandEnergies.toFloatArray())
-                    putLong(ARG_CAPTURED_AT, analysis.capturedAtElapsedRealtime)
-                }
                 handler.post {
+                    if (!uiForeground || !player.playWhenReady) return@post
                     latestAnalysis = analysis
+                    val intensity = applyAmbientIntensity(analysis.relativeDbfs)
                     maybeAdapt(analysis)
+                    val args = Bundle().apply {
+                        putFloat(ARG_RELATIVE_DBFS, analysis.relativeDbfs)
+                        putInt(ARG_LEVEL_BUCKET, analysis.levelBucket.ordinal)
+                        putString(ARG_SOUND_ID, analysis.suggestedSoundId.name)
+                        putFloat(ARG_CONFIDENCE, analysis.confidence)
+                        putFloatArray(ARG_MEL_ENERGIES, analysis.melBandEnergies.toFloatArray())
+                        putLong(ARG_CAPTURED_AT, analysis.capturedAtElapsedRealtime)
+                        putFloat(ARG_MASK_INTENSITY, intensity)
+                    }
                     session.broadcastCustomCommand(
                         SessionCommand(COMMAND_ANALYSIS_EVENT, Bundle.EMPTY),
                         args,
@@ -200,8 +206,12 @@ class MaskingPlaybackService : MediaSessionService() {
                 }
                 COMMAND_SET_UI_FOREGROUND -> {
                     uiForeground = args.getBoolean(ARG_ENABLED, false)
-                    if (uiForeground && player.playWhenReady) player.startCapture()
-                    else player.stopCapture()
+                    if (uiForeground && player.playWhenReady) {
+                        player.startCapture()
+                    } else {
+                        player.stopCapture()
+                        resetAmbientIntensity()
+                    }
                 }
                 COMMAND_GET_AUDIO_METRICS -> {
                     val metrics = Bundle().apply { putInt(ARG_XRUN_COUNT, player.xRunCount()) }
@@ -234,6 +244,28 @@ class MaskingPlaybackService : MediaSessionService() {
             putLong(ARG_TIMER_REMAINING, timerRemainingWhenPausedMs ?: 0L)
         }
         session.broadcastCustomCommand(SessionCommand(COMMAND_TIMER_EVENT, Bundle.EMPTY), args)
+    }
+
+    /**
+     * Maps relative dBFS to mask intensity under the user volume ceiling.
+     * Quiet rooms duck near silence; louder rooms approach full slider.
+     */
+    private fun applyAmbientIntensity(relativeDbfs: Float): Float {
+        val target = dbfsToAmbientScale(relativeDbfs)
+        if (!hasAmbientScale) {
+            smoothedAmbientScale = target
+            hasAmbientScale = true
+        } else {
+            smoothedAmbientScale += AMBIENT_EMA_ALPHA * (target - smoothedAmbientScale)
+        }
+        player.setAmbientScale(smoothedAmbientScale)
+        return player.maskIntensity
+    }
+
+    private fun resetAmbientIntensity() {
+        hasAmbientScale = false
+        smoothedAmbientScale = 1f
+        player.resetAmbientScale()
     }
 
     private fun maybeAdapt(analysis: NoiseAnalysis) {
@@ -305,6 +337,7 @@ class MaskingPlaybackService : MediaSessionService() {
         const val ARG_CONFIDENCE = "confidence"
         const val ARG_MEL_ENERGIES = "mel_energies"
         const val ARG_CAPTURED_AT = "captured_at"
+        const val ARG_MASK_INTENSITY = "mask_intensity"
         const val ARG_TIMER_DEADLINE = "timer_deadline"
         const val ARG_TIMER_REMAINING = "timer_remaining"
         const val ARG_XRUN_COUNT = "xrun_count"
@@ -319,5 +352,18 @@ class MaskingPlaybackService : MediaSessionService() {
         private const val ADAPTIVE_COOLDOWN_MS = 15_000L
         private const val MANUAL_OVERRIDE_DISTANCE = 0.25f
         private const val MANUAL_OVERRIDE_UPDATES = 5
+        /** ~1–2 s smoothing at ~1 Hz analysis ticks. */
+        private const val AMBIENT_EMA_ALPHA = 0.45f
+        private const val AMBIENT_DBFS_FLOOR = -50f
+        private const val AMBIENT_DBFS_CEILING = -25f
+        private const val AMBIENT_SCALE_MIN = 0.05f
+
+        fun dbfsToAmbientScale(relativeDbfs: Float): Float {
+            if (relativeDbfs <= AMBIENT_DBFS_FLOOR) return AMBIENT_SCALE_MIN
+            if (relativeDbfs >= AMBIENT_DBFS_CEILING) return 1f
+            val t = (relativeDbfs - AMBIENT_DBFS_FLOOR) /
+                (AMBIENT_DBFS_CEILING - AMBIENT_DBFS_FLOOR)
+            return AMBIENT_SCALE_MIN + t * (1f - AMBIENT_SCALE_MIN)
+        }
     }
 }

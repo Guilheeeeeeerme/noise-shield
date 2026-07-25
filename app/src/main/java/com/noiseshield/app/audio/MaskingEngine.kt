@@ -77,6 +77,7 @@ class MaskingEngine(
             pollJob = scope.launch(Dispatchers.Default) {
                 while (isActive) {
                     val raw = withContext(Dispatchers.IO) { native.pollEstimate() }
+                    if (!isActive) break
                     if (raw != null && raw.size >= 28) {
                         _estimate.value = NoiseAnalysis(
                             relativeDbfs = raw[0],

@@ -57,6 +57,10 @@ data class SessionUiState(
     val timerRemainingSec: Int? = null,
     val limitedMode: Boolean = true,
     val estimate: NoiseAnalysis? = null,
+    /** Fraction of user volume applied after ambient ducking (null when not analyzing). */
+    val maskIntensity: Float? = null,
+    /** Brief banner when adaptive mode auto-switches the mask. */
+    val adaptiveSwitchTo: MaskingSoundId? = null,
     val favorites: Set<MaskingSoundId> = emptySet(),
     val showFeedback: Boolean = false,
     val showSafetyWarning: Boolean = false,
@@ -179,6 +183,7 @@ class SessionViewModel(
                 runtimeState = if (!granted) SessionRuntimeState.PERMISSION_REQUIRED
                 else if (it.playing) SessionRuntimeState.CAPTURING else SessionRuntimeState.READY,
                 estimate = if (granted) it.estimate else null,
+                maskIntensity = if (granted) it.maskIntensity else null,
             )
         }
         setUiForeground(uiForeground)
@@ -187,7 +192,9 @@ class SessionViewModel(
     fun setUiForeground(foreground: Boolean) {
         uiForeground = foreground
         sendBooleanCommand(MaskingPlaybackService.COMMAND_SET_UI_FOREGROUND, foreground)
-        if (!foreground) _state.update { it.copy(estimate = null) }
+        if (!foreground) {
+            _state.update { it.copy(estimate = null, maskIntensity = null) }
+        }
     }
 
     fun togglePlay() {
@@ -239,6 +246,8 @@ class SessionViewModel(
             it.copy(
                 playing = false,
                 estimate = null,
+                maskIntensity = null,
+                adaptiveSwitchTo = null,
                 showFeedback = showFeedback,
             )
         }
@@ -331,7 +340,18 @@ class SessionViewModel(
                 ?.toList().orEmpty(),
             capturedAtElapsedRealtime = args.getLong(MaskingPlaybackService.ARG_CAPTURED_AT),
         )
-        _state.update { it.copy(estimate = analysis, runtimeState = SessionRuntimeState.CAPTURING) }
+        val intensity = if (args.containsKey(MaskingPlaybackService.ARG_MASK_INTENSITY)) {
+            args.getFloat(MaskingPlaybackService.ARG_MASK_INTENSITY).coerceIn(0f, 1f)
+        } else {
+            null
+        }
+        _state.update {
+            it.copy(
+                estimate = analysis,
+                maskIntensity = intensity,
+                runtimeState = SessionRuntimeState.CAPTURING,
+            )
+        }
     }
 
     private fun syncPlayer(player: Player) {
@@ -348,16 +368,43 @@ class SessionViewModel(
             player.playWhenReady && !_state.value.limitedMode -> SessionRuntimeState.CAPTURING
             else -> SessionRuntimeState.READY
         }
+        val adaptiveSwitch = if (
+            sound != previousSound &&
+            _state.value.playing &&
+            _state.value.prefs.adaptiveModeEnabled &&
+            !_state.value.limitedMode &&
+            sound == _state.value.estimate?.suggestedSoundId
+        ) {
+            sound
+        } else if (sound == previousSound) {
+            _state.value.adaptiveSwitchTo
+        } else {
+            null
+        }
         _state.update {
             it.copy(
                 playing = player.playWhenReady,
                 sound = sound,
                 volume = player.volume,
                 runtimeState = runtime,
+                adaptiveSwitchTo = adaptiveSwitch,
+                maskIntensity = if (player.playWhenReady) it.maskIntensity else null,
             )
         }
         if (sound != previousSound) {
             viewModelScope.launch { prefsRepo.setLastSound(sound) }
+            if (adaptiveSwitch == sound) {
+                viewModelScope.launch {
+                    delay(3_500L)
+                    _state.update { state ->
+                        if (state.adaptiveSwitchTo == sound) {
+                            state.copy(adaptiveSwitchTo = null)
+                        } else {
+                            state
+                        }
+                    }
+                }
+            }
         }
     }
 

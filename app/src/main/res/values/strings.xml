@@ -49,7 +49,7 @@
     <string name="label_timer">Timer</string>
     <string name="label_sounds">Sounds</string>
     <string name="label_adaptive_mode">Adaptive mode</string>
-    <string name="adaptive_mode_description">Automatically switch only when a better mask remains stable.</string>
+    <string name="adaptive_mode_description">Follows room level (quieter when quiet) and switches mask only when a better match stays stable.</string>
     <string name="timer_off">Off</string>
     <string name="timer_15">15m</string>
     <string name="timer_30">30m</string>
@@ -57,6 +57,8 @@
     <string name="timer_remaining">%1$d:%2$02d left</string>
     <string name="analysis_unavailable">Analysis unavailable</string>
     <string name="analysis_status">Relative level %1$s · suggested mask %2$s</string>
+    <string name="mask_intensity_status">Mask intensity %1$d%% of volume</string>
+    <string name="adaptive_switching">Switching mask to %1$s…</string>
     <string name="level_low">low</string>
     <string name="level_medium">medium</string>
     <string name="level_high">high</string>
