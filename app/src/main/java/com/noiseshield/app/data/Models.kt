@@ -70,11 +70,31 @@ data class AudioRouteDevice(
 enum class AppThemeMode { SYSTEM, LIGHT, DARK }
 
 enum class AppLanguage(val tag: String) {
+    SYSTEM(""),
     ENGLISH("en"),
-    PORTUGUESE("pt");
+    PORTUGUESE("pt-BR"),
+    SPANISH("es"),
+    CHINESE_SIMPLIFIED("zh-Hans"),
+    FRENCH("fr");
 
     companion object {
-        fun fromTag(tag: String): AppLanguage =
-            entries.firstOrNull { it.tag == tag } ?: ENGLISH
+        fun fromTag(tag: String): AppLanguage {
+            val first = tag.substringBefore(',').trim().lowercase().replace('_', '-')
+            if (first.isEmpty()) return SYSTEM
+            val primary = first.substringBefore('-')
+            val scriptOrRegion = first.substringAfter('-', missingDelimiterValue = "")
+            return when {
+                primary == "en" -> ENGLISH
+                primary == "pt" -> PORTUGUESE
+                primary == "es" -> SPANISH
+                primary == "fr" -> FRENCH
+                primary == "zh" && (
+                    scriptOrRegion.startsWith("hans") ||
+                        scriptOrRegion == "cn" ||
+                        scriptOrRegion.isEmpty()
+                    ) -> CHINESE_SIMPLIFIED
+                else -> entries.firstOrNull { it.tag.equals(first, ignoreCase = true) } ?: ENGLISH
+            }
+        }
     }
 }

@@ -332,7 +332,12 @@ class SessionViewModel(
     }
 
     fun setLanguage(language: AppLanguage) {
-        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language.tag))
+        val locales = if (language == AppLanguage.SYSTEM || language.tag.isEmpty()) {
+            LocaleListCompat.getEmptyLocaleList()
+        } else {
+            LocaleListCompat.forLanguageTags(language.tag)
+        }
+        AppCompatDelegate.setApplicationLocales(locales)
     }
 
     fun setAdaptiveMode(enabled: Boolean) {

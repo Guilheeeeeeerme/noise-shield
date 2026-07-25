@@ -141,9 +141,14 @@ private fun AppRoot(
         composable("settings") {
             SettingsScreen(
                 prefs = state.prefs,
-                currentLanguage = AppLanguage.fromTag(
-                    AppCompatDelegate.getApplicationLocales()[0]?.language ?: "en",
-                ),
+                currentLanguage = run {
+                    val appLocales = AppCompatDelegate.getApplicationLocales()
+                    if (appLocales.isEmpty) {
+                        AppLanguage.SYSTEM
+                    } else {
+                        AppLanguage.fromTag(appLocales.toLanguageTags())
+                    }
+                },
                 onBack = { navController.popBackStack() },
                 onTheme = viewModel::setTheme,
                 onLanguage = onLanguage,

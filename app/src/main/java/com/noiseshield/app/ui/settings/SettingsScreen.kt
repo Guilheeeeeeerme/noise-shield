@@ -3,6 +3,8 @@ package com.noiseshield.app.ui.settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,7 +32,7 @@ import com.noiseshield.app.data.AppLanguage
 import com.noiseshield.app.data.AppThemeMode
 import com.noiseshield.app.data.UserPreferences
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     prefs: UserPreferences,
@@ -82,17 +84,28 @@ fun SettingsScreen(
             Spacer(Modifier.height(24.dp))
             Text(stringResource(R.string.settings_language), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = currentLanguage == AppLanguage.ENGLISH,
-                    onClick = { onLanguage(AppLanguage.ENGLISH) },
-                    label = { Text(stringResource(R.string.lang_en)) },
-                )
-                FilterChip(
-                    selected = currentLanguage == AppLanguage.PORTUGUESE,
-                    onClick = { onLanguage(AppLanguage.PORTUGUESE) },
-                    label = { Text(stringResource(R.string.lang_pt)) },
-                )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                AppLanguage.entries.forEach { language ->
+                    FilterChip(
+                        selected = currentLanguage == language,
+                        onClick = { onLanguage(language) },
+                        label = {
+                            Text(
+                                when (language) {
+                                    AppLanguage.SYSTEM -> stringResource(R.string.lang_system)
+                                    AppLanguage.ENGLISH -> stringResource(R.string.lang_en)
+                                    AppLanguage.PORTUGUESE -> stringResource(R.string.lang_pt)
+                                    AppLanguage.SPANISH -> stringResource(R.string.lang_es)
+                                    AppLanguage.CHINESE_SIMPLIFIED -> stringResource(R.string.lang_zh)
+                                    AppLanguage.FRENCH -> stringResource(R.string.lang_fr)
+                                },
+                            )
+                        },
+                    )
+                }
             }
 
             Spacer(Modifier.height(24.dp))
