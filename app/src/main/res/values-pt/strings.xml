@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Noise Shield</string>
+
+    <string name="notification_channel_name">Reprodução de máscara</string>
+    <string name="notification_title">Noise Shield</string>
+    <string name="notification_text">Sessão de máscara ativa</string>
+    <string name="notification_playing">Tocando %1$s</string>
+    <string name="notification_paused">Pausado</string>
+    <string name="action_play">Tocar</string>
+    <string name="action_pause">Pausar</string>
+    <string name="action_stop">Parar</string>
+    <string name="action_skip">Pular</string>
+    <string name="action_next">Próximo</string>
+    <string name="action_get_started">Começar</string>
+    <string name="action_grant_mic">Permitir microfone</string>
+
+    <string name="onboarding_title_1">Foco mais silencioso</string>
+    <string name="onboarding_body_1">O Noise Shield reduz o ruído ambiental percebido com sons de máscara adaptativos — tudo no seu aparelho.</string>
+    <string name="onboarding_title_2">Microfone para análise</string>
+    <string name="onboarding_body_2">O microfone (opcional) estima o ambiente e sugere um perfil. O áudio bruto nunca sai do telefone.</string>
+    <string name="onboarding_title_3">Não é ANC médico</string>
+    <string name="onboarding_body_3">Isto é máscara para consumidor, não tratamento médico nem cancelamento ativo garantido.</string>
+
+    <string name="settings_title">Configurações</string>
+    <string name="settings_theme">Tema</string>
+    <string name="settings_language">Idioma</string>
+    <string name="settings_onboarding">Ver introdução de novo</string>
+    <string name="settings_privacy">Tudo é processado localmente. Sem conta, sem sync na nuvem, sem envio de áudio.</string>
+    <string name="theme_system">Sistema</string>
+    <string name="theme_light">Claro</string>
+    <string name="theme_dark">Escuro</string>
+    <string name="lang_en">English</string>
+    <string name="lang_pt">Português</string>
+
+    <string name="limited_mode_title">Modo limitado</string>
+    <string name="limited_mode_body">Microfone negado — a máscara manual continua. Análise e sugestão automática desligadas.</string>
+    <string name="session_playing">Mascarando</string>
+    <string name="session_ready">Toque para iniciar</string>
+    <string name="label_volume">Volume</string>
+    <string name="label_timer">Temporizador</string>
+    <string name="label_sounds">Sons</string>
+    <string name="timer_off">Off</string>
+    <string name="timer_15">15m</string>
+    <string name="timer_30">30m</string>
+    <string name="timer_60">60m</string>
+    <string name="timer_remaining">%1$d:%2$02d restantes</string>
+    <string name="analysis_unavailable">Análise indisponível</string>
+    <string name="analysis_status">Nível %1$s · %2$s</string>
+
+    <string name="sound_white_noise">Branco</string>
+    <string name="sound_pink_noise">Rosa</string>
+    <string name="sound_brown_noise">Marrom</string>
+    <string name="sound_ocean_waves">Oceano</string>
+    <string name="sound_rain">Chuva</string>
+    <string name="sound_fan">Ventilador</string>
+    <string name="sound_air_conditioner">Ar</string>
+    <string name="sound_cafe_ambience">Café</string>
+
+    <string name="feedback_title">Ajudou?</string>
+    <string name="feedback_body">O perfil de máscara ajudou com o ruído ao seu redor?</string>
+    <string name="feedback_yes">Sim</string>
+    <string name="feedback_no">Não</string>
+</resources>

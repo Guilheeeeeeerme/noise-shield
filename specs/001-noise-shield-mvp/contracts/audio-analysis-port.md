@@ -1,85 +1,33 @@
-# Audio Analysis Port Contract
+# Audio Engine Contract (JNI / Oboe)
 
-**Version**: 1.0  
+**Version**: 2.0  
 **Feature**: `001-noise-shield-mvp`
 
-Internal contract between the mobile session layer and swappable audio engines (MVP heuristic module or future native DSP/ML module).
+Contract between the Kotlin session layer and the native `noise_shield_audio` library.
 
-## Purpose
+## NativeAudioEngine (Kotlin)
 
-Preserve FR-021 flexibility: core session logic depends only on this port, not on a specific native implementation.
+| Method | Behavior |
+|--------|----------|
+| `init()` | Open Oboe output stream; synthesize default loops |
+| `release()` | Stop player + capture; close streams |
+| `setPlaying(Boolean)` | Gate output callback |
+| `setVolume(Float)` | 0..1 linear gain |
+| `setSound(soundId, crossfadeSeconds)` | Crossfade to sound 0..7 |
+| `loadPcm(soundId, samples, sampleRate)` | Optional override buffer |
+| `startCapture()` / `stopCapture()` | Oboe input @ 16 kHz |
+| `pollEstimate()` | `float[4]?` = `[levelBucket, rmsDb, broadProfile, confidence]` |
 
-## Interface (TypeScript)
+## Enums
 
-```typescript
-export type BroadProfile =
-  | 'fan'
-  | 'traffic'
-  | 'cafe'
-  | 'rain'
-  | 'air_conditioner'
-  | 'white_noise'
-  | 'unknown';
+- **SoundId**: white_noise=0 … cafe_ambience=7
+- **LevelBucket**: low=0, medium=1, high=2
+- **BroadProfile**: fan, traffic, cafe, rain, air_conditioner, white_noise, unknown
 
-export type NoiseLevelBucket = 'low' | 'medium' | 'high';
+## Analysis
 
-export interface NoiseEstimate {
-  levelBucket: NoiseLevelBucket;
-  rmsDb: number;
-  broadProfile: BroadProfile;
-  confidence: number; // 0..1
-  capturedAt: string; // ISO-8601
-}
+Heuristic ports prior TypeScript classifier: windowed RMS → dB bucket; crude third-band energy ratios → profile. Estimates below confidence 0.55 are suppressed.
 
-export interface AudioAnalysisConfig {
-  windowMs: number;           // default 1000
-  refreshIntervalMs: number;  // default 1000
-  minConfidence: number;      // default 0.55
-}
+## Playback
 
-export interface AudioAnalysisPort {
-  /** Start mic capture + analysis loop for an active session */
-  start(config?: Partial<AudioAnalysisConfig>): Promise<void>;
-
-  /** Stop capture; must be safe to call multiple times */
-  stop(): Promise<void>;
-
-  /** Latest estimate; null if insufficient signal or not started */
-  getLatestEstimate(): NoiseEstimate | null;
-
-  /** Subscribe to continuous estimate updates */
-  onEstimate(callback: (estimate: NoiseEstimate) => void): () => void;
-}
-```
-
-## Masking playback port (companion contract)
-
-```typescript
-export interface MaskingPlaybackPort {
-  load(soundId: string): Promise<void>;
-  play(): Promise<void>;
-  pause(): Promise<void>;
-  stop(): Promise<void>;
-  setVolume(volume: number): Promise<void>; // 0..1
-  crossfadeTo(soundId: string, durationMs: number): Promise<void>;
-  getState(): 'idle' | 'playing' | 'paused' | 'stopped';
-}
-```
-
-**MVP implementation**: `MaskingPlaybackPort` → `react-native-track-player` adapter.  
-**Future implementation**: Native low-latency engine implementing the same interface.
-
-## Behavioral requirements
-
-| ID | Requirement |
-|----|-------------|
-| AP-001 | `start()` MUST only activate mic capture during an active user-initiated session |
-| AP-002 | `stop()` MUST release mic resources when session ends |
-| AP-003 | Estimates MUST be producible offline |
-| AP-004 | No raw PCM leaves this port; only `NoiseEstimate` and derived features |
-| AP-005 | Estimate latency ≤ 2 s from ambient change to new estimate (supports SC-010) |
-| AP-006 | Adapter MUST be mockable for unit tests |
-
-## Test doubles
-
-Provide `FakeAudioAnalysisPort` emitting scripted estimate sequences for classifier and auto-apply integration tests.
+Mono float output @ 48 kHz, low-latency Oboe. Crossfade between current/target loops. Procedural synth provides offline loops; PCM load optional.

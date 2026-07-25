@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Noise Shield</string>
+
+    <string name="notification_channel_name">Masking playback</string>
+    <string name="notification_title">Noise Shield</string>
+    <string name="notification_text">Masking session active</string>
+    <string name="notification_playing">Playing %1$s</string>
+    <string name="notification_paused">Paused</string>
+    <string name="action_play">Play</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_stop">Stop</string>
+    <string name="action_skip">Skip</string>
+    <string name="action_next">Next</string>
+    <string name="action_get_started">Get started</string>
+    <string name="action_grant_mic">Allow microphone</string>
+
+    <string name="onboarding_title_1">Quieter focus</string>
+    <string name="onboarding_body_1">Noise Shield reduces perceived environmental noise with adaptive masking sounds — fully on your device.</string>
+    <string name="onboarding_title_2">Microphone for analysis</string>
+    <string name="onboarding_body_2">Optional mic access estimates ambient noise and suggests a masking profile. Raw audio never leaves your phone.</string>
+    <string name="onboarding_title_3">Not medical ANC</string>
+    <string name="onboarding_body_3">This is consumer masking, not medical treatment and not guaranteed active noise cancellation.</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_onboarding">Replay onboarding</string>
+    <string name="settings_privacy">All processing is local. No account, no cloud sync, no audio upload.</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="lang_en">English</string>
+    <string name="lang_pt">Português</string>
+
+    <string name="limited_mode_title">Limited mode</string>
+    <string name="limited_mode_body">Microphone denied — manual masking still works. Analysis and auto-suggest are off.</string>
+    <string name="session_playing">Masking</string>
+    <string name="session_ready">Tap to start</string>
+    <string name="label_volume">Volume</string>
+    <string name="label_timer">Timer</string>
+    <string name="label_sounds">Sounds</string>
+    <string name="timer_off">Off</string>
+    <string name="timer_15">15m</string>
+    <string name="timer_30">30m</string>
+    <string name="timer_60">60m</string>
+    <string name="timer_remaining">%1$d:%2$02d left</string>
+    <string name="analysis_unavailable">Analysis unavailable</string>
+    <string name="analysis_status">Level %1$s · %2$s</string>
+
+    <string name="sound_white_noise">White</string>
+    <string name="sound_pink_noise">Pink</string>
+    <string name="sound_brown_noise">Brown</string>
+    <string name="sound_ocean_waves">Ocean</string>
+    <string name="sound_rain">Rain</string>
+    <string name="sound_fan">Fan</string>
+    <string name="sound_air_conditioner">AC</string>
+    <string name="sound_cafe_ambience">Cafe</string>
+
+    <string name="feedback_title">Did that help?</string>
+    <string name="feedback_body">Was the masking profile helpful for the noise around you?</string>
+    <string name="feedback_yes">Yes</string>
+    <string name="feedback_no">No</string>
+</resources>
