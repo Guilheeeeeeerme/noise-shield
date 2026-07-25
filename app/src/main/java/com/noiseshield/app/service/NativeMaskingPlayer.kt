@@ -47,24 +47,26 @@ class NativeMaskingPlayer(
     private var focusSuppressed = false
     private var resumeAfterTransientLoss = false
     private var selectedSound = MaskingSoundId.WHITE_NOISE
-    private var volume = 0.3f
+    private var volume = 1.0f
     /** Ambient-linked intensity under the user volume ceiling (1 = full slider). */
     private var ambientScale = AMBIENT_SCALE_MIN
     /** Audio-focus duck multiplier (1 = unducked). */
     private var focusDuck = 1f
-    /** Soft-start multiplier: 0 at Play, holds silence, then ramps to 1. */
+    /** Soft-start multiplier: 0 at Play, then ramps to 1 over fade duration. */
     private var introScale = 0f
+    /** Fade slider 0=Gentle (long) … 1=Fast (short). Mid 0.5 → 2s. */
+    private var softStartFade = 0.5f
     private var preferredInputDeviceId = 0
     private var preferredOutputDeviceId = 0
     private var focusRequest: AudioFocusRequest? = null
     private var recoveryObserver: Job? = null
     private var decodeJob: Job? = null
-    private val introHoldThenRamp = Runnable { beginIntroRamp() }
     private val introRampTick = object : Runnable {
         override fun run() {
             if (!playWhenReady) return
+            val rampMs = introRampMs().coerceAtLeast(1f)
             val elapsed = System.currentTimeMillis() - introRampStartedAtMs
-            introScale = (elapsed.toFloat() / INTRO_RAMP_MS).coerceIn(0f, 1f)
+            introScale = (elapsed.toFloat() / rampMs).coerceIn(0f, 1f)
             applyEffectiveVolume()
             if (introScale < 1f) {
                 handler.postDelayed(this, INTRO_TICK_MS)
@@ -222,6 +224,14 @@ class NativeMaskingPlayer(
         applyEffectiveVolume()
     }
 
+    /**
+     * Sets soft-start fade length. 0 = Gentle (4s), 0.5 = mid (2s), 1 = Fast (1s).
+     * Applies on the next Play; does not restart an in-progress intro.
+     */
+    fun setSoftStartFade(fade: Float) {
+        softStartFade = fade.coerceIn(0f, 1f)
+    }
+
     override fun handleSetMediaItems(
         mediaItems: List<MediaItem>,
         startIndex: Int,
@@ -314,21 +324,23 @@ class NativeMaskingPlayer(
     }
 
     private fun startSoftIntro() {
-        handler.removeCallbacks(introHoldThenRamp)
         handler.removeCallbacks(introRampTick)
         introScale = 0f
         applyEffectiveVolume()
-        handler.postDelayed(introHoldThenRamp, INTRO_HOLD_MS)
-    }
-
-    private fun beginIntroRamp() {
-        if (!playWhenReady) return
         introRampStartedAtMs = System.currentTimeMillis()
         handler.post(introRampTick)
     }
 
+    private fun introRampMs(): Float {
+        val fade = softStartFade.coerceIn(0f, 1f)
+        return if (fade >= 0.5f) {
+            INTRO_RAMP_MS_MID + (fade - 0.5f) / 0.5f * (INTRO_RAMP_MS_MIN - INTRO_RAMP_MS_MID)
+        } else {
+            INTRO_RAMP_MS_MAX + (fade / 0.5f) * (INTRO_RAMP_MS_MID - INTRO_RAMP_MS_MAX)
+        }
+    }
+
     private fun cancelSoftIntro() {
-        handler.removeCallbacks(introHoldThenRamp)
         handler.removeCallbacks(introRampTick)
         introScale = 0f
         applyEffectiveVolume()
@@ -340,7 +352,6 @@ class NativeMaskingPlayer(
         decodeJob?.cancel()
         decodeJob = null
         handler.removeCallbacks(releaseEngine)
-        handler.removeCallbacks(introHoldThenRamp)
         handler.removeCallbacks(introRampTick)
         engine.stopCapture()
         engine.release()
@@ -435,10 +446,10 @@ class NativeMaskingPlayer(
         private const val ENGINE_RELEASE_DELAY_MS = 30_000L
         private const val DUCK_FACTOR = 0.2f
         private const val AMBIENT_SCALE_MIN = 0.05f
-        /** Silence after Play before fade-in begins. */
-        private const val INTRO_HOLD_MS = 2_000L
-        /** Fade-in duration from silence to target. */
-        private const val INTRO_RAMP_MS = 4_000L
+        /** Fade Fast (1) → 1s; mid (0.5) → 2s; Gentle (0) → 4s. */
+        private const val INTRO_RAMP_MS_MIN = 1_000f
+        private const val INTRO_RAMP_MS_MID = 2_000f
+        private const val INTRO_RAMP_MS_MAX = 4_000f
         private const val INTRO_TICK_MS = 50L
 
         fun mediaItemFor(sound: MaskingSoundId): MediaItem =

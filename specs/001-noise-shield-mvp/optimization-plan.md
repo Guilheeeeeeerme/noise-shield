@@ -12,7 +12,7 @@ Current repository is an incomplete prototype, not a verified MVP.
 | Sounds | Unused placeholder MP3s and crude four-second loops | Procedural colored noise plus seamless Ogg natural loops | Replace |
 | Analysis | Temporal thirds incorrectly treated as frequency bands | FFT/mel spectral matching designed for masking | Replace |
 | ML alternative | None | YAMNet adds unnecessary model and CPU overhead for this use case | Reject |
-| Auto-adaptation | Unstable hard-coded classifications | Smoothed scoring, hysteresis, Sensitivity + Delay sliders | Replace |
+| Auto-adaptation | Unstable hard-coded classifications | Smoothed scoring, hysteresis, Switching + Fade sliders | Replace |
 | Background microphone | Capture can outlive the foreground UI | Foreground-UI capture only | Replace |
 | Timer | ViewModel countdown | Service-owned absolute deadline | Replace |
 | Audio focus | Delayed/transient states mishandled | Complete focus state machine | Replace |
@@ -54,10 +54,12 @@ NoiseAnalysis(
 - Present relative ambient level and a suggested mask, never an uncalibrated
   SPL or an unsupported claim that a particular environmental source was
   detected.
-- Preserve existing preferences. Add `adaptiveSensitivity` / `adaptiveDelay`
-  (defaults 0.5; sensitivity 0 = Off; migrate from legacy `adaptiveModeEnabled`),
-  safety-warning acknowledgement, and per-sound feedback counters. AppCompat
-  locale storage becomes the sole language source.
+- Preserve existing preferences. Add `adaptiveModeEnabled` (default true; ON forces
+  mid Switching/Fade), `adaptiveSwitching` / `adaptiveFade` (defaults 0.5;
+  used when Adaptive is OFF; migrate from legacy sensitivity/delay keys),
+  safety-warning acknowledgement, and per-sound feedback counters. App gain is
+  always 1.0 (device volume only). AppCompat locale storage becomes the sole
+  language source.
 
 ## Implementation sequence
 
@@ -119,19 +121,24 @@ NoiseAnalysis(
   classifier.
 - Update once per second with a three-second EMA. Auto-switch defaults match
   prior behavior (score improvement ≥ 0.10 for three updates, 15 s cooldown) at
-  Sensitivity/Delay midpoints. Sensitivity 0 disables switching; Delay couples
-  trigger stability and cooldown (Stable ↔ Quick).
-- Soft-start every Play: 2 s silence hold, then 4 s intro ramp. Ambient scale
-  starts at min until the first estimate, then the existing envelope raises it.
+  Switching/Fade midpoints. Fade couples soft-start length and switch
+  patience/cooldown (Gentle ↔ Fast).
+- Soft-start every Play: Fade-driven ramp only (Fast 1 s, mid 2 s, Gentle 4 s);
+  no silence hold. Ambient scale starts at min until the first estimate, then
+  the existing envelope raises it.
+- Adaptive Mode ON forces mid Switching/Fade and locks the sliders. Adaptive
+  Mode OFF uses live Switching/Fade (editable while playing). Auto-switch
+  runs in both cases.
 - Keep a manual selection until normalized spectral distance from its override
   baseline exceeds 0.25 for five seconds.
 - Never raise volume automatically. Low confidence retains the active sound.
+  No in-app volume slider — device media volume only.
 
 ### 6. Repair product behavior and UI
 
-- Replace the adaptive-mode toggle with Sensitivity (0 = Off → Eager) and Delay
-  (Stable → Quick) sliders. Defaults mid. Disabled (sensitivity 0) may suggest
-  but never switch sounds.
+- Adaptive Mode switch (default ON) plus Switching (Selective → Eager) and
+  Fade (Gentle → Fast) sliders at mid defaults. Sliders disabled while
+  Adaptive is ON; enabled (including while playing) when Adaptive is OFF.
 - Debounce volume persistence by 300 ms and clamp stored values.
 - Show favorites first and separate sound-selection and favorite click targets.
 - Localize sound, analysis, notification, accessibility, error, and safety

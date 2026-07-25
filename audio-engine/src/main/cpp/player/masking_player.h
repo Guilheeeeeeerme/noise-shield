@@ -81,7 +81,7 @@ private:
     std::vector<std::shared_ptr<const Buffer>> retiredBuffers_;
 
     std::atomic<bool> playRequested_{false};
-    std::atomic<float> targetGain_{0.09f};
+    std::atomic<float> targetGain_{1.0f};
     std::atomic<int32_t> requestedSound_{static_cast<int32_t>(SoundId::WhiteNoise)};
     std::atomic<int32_t> requestedCrossfadeFrames_{36000};
     static constexpr uint32_t kCommandRingSize = 16;

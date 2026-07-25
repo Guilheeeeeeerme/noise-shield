@@ -8,7 +8,7 @@
 - [x] Foreground-UI-only microphone capture and asynchronous route recovery
 - [x] Continuous colored noise plus owned 48 kHz/30-second mono Ogg loops
 - [x] 2,048-point FFT, 24-band mel masking analysis, EMA/hysteresis/cooldown
-- [x] Auto-switch Sensitivity + Delay sliders, soft-start (2s hold + 4s ramp), favorites ordering, volume persistence debounce
+- [x] Adaptive Mode + Switching/Fade mid sliders (locked when Adaptive ON), Fade-driven soft-start (1–4s), no app volume (device volume only), favorites ordering
 - [x] Local preferences, EN/PT resources, AppCompat locale storage
 - [x] Backup disabled, no network/account/analytics/raw-audio persistence path
 - [x] Safety warning, 60-minute break reminder, baseline/startup profiles

@@ -32,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -57,19 +58,21 @@ fun SessionScreen(
     state: SessionUiState,
     onTogglePlay: () -> Unit,
     onSelectSound: (MaskingSoundId) -> Unit,
-    onVolume: (Float) -> Unit,
     onTimer: (Int?) -> Unit,
     onToggleFavorite: (MaskingSoundId) -> Unit,
     onSettings: () -> Unit,
     onRequestMic: () -> Unit,
-    onAdaptiveSensitivity: (Float) -> Unit,
-    onAdaptiveDelay: (Float) -> Unit,
+    onAdaptiveMode: (Boolean) -> Unit,
+    onAdaptiveSwitching: (Float) -> Unit,
+    onAdaptiveFade: (Float) -> Unit,
     onInputDevice: (String) -> Unit,
     onOutputDevice: (String) -> Unit,
     onDismissSafetyWarning: () -> Unit,
     onDismissBreakReminder: () -> Unit,
 ) {
     val sessionLocked = state.playing
+    val adaptiveOn = state.prefs.adaptiveModeEnabled
+    val slidersEnabled = !adaptiveOn
     Scaffold(
         topBar = {
             TopAppBar(
@@ -201,28 +204,34 @@ fun SessionScreen(
             )
 
             Spacer(Modifier.height(20.dp))
-            Text(stringResource(R.string.label_volume), modifier = Modifier.fillMaxWidth())
-            Slider(
-                value = state.volume,
-                onValueChange = onVolume,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-            )
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.label_adaptive_mode))
+                    Text(
+                        stringResource(R.string.adaptive_mode_description),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = adaptiveOn,
+                    onCheckedChange = onAdaptiveMode,
+                )
+            }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .alpha(if (sessionLocked) 0.45f else 1f),
+                    .alpha(if (slidersEnabled) 1f else 0.45f),
             ) {
-                Text(stringResource(R.string.label_auto_switch))
-                Text(
-                    stringResource(R.string.auto_switch_description),
-                    style = MaterialTheme.typography.bodySmall,
-                )
                 Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.label_sensitivity), modifier = Modifier.fillMaxWidth())
+                Text(stringResource(R.string.label_switching), modifier = Modifier.fillMaxWidth())
                 Slider(
-                    value = state.prefs.adaptiveSensitivity,
-                    onValueChange = onAdaptiveSensitivity,
-                    enabled = !sessionLocked,
+                    value = state.prefs.adaptiveSwitching,
+                    onValueChange = onAdaptiveSwitching,
+                    enabled = slidersEnabled,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(
@@ -230,22 +239,22 @@ fun SessionScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        stringResource(R.string.sensitivity_off),
+                        stringResource(R.string.switching_selective),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        stringResource(R.string.sensitivity_eager),
+                        stringResource(R.string.switching_eager),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.label_delay), modifier = Modifier.fillMaxWidth())
+                Text(stringResource(R.string.label_fade), modifier = Modifier.fillMaxWidth())
                 Slider(
-                    value = state.prefs.adaptiveDelay,
-                    onValueChange = onAdaptiveDelay,
-                    enabled = !sessionLocked,
+                    value = state.prefs.adaptiveFade,
+                    onValueChange = onAdaptiveFade,
+                    enabled = slidersEnabled,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(
@@ -253,12 +262,12 @@ fun SessionScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
-                        stringResource(R.string.delay_stable),
+                        stringResource(R.string.fade_gentle),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        stringResource(R.string.delay_quick),
+                        stringResource(R.string.fade_fast),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

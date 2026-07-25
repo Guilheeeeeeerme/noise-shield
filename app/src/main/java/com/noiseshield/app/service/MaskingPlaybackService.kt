@@ -31,8 +31,9 @@ class MaskingPlaybackService : MediaSessionService() {
     private lateinit var session: MediaSession
     private var timerDeadlineElapsedRealtime: Long? = null
     private var timerRemainingWhenPausedMs: Long? = null
-    private var adaptiveSensitivity = 0.5f
-    private var adaptiveDelay = 0.5f
+    private var adaptiveModeEnabled = true
+    private var adaptiveSwitching = 0.5f
+    private var adaptiveFade = 0.5f
     private var uiForeground = false
     private var latestAnalysis: NoiseAnalysis? = null
     private var manualOverride = false
@@ -103,6 +104,7 @@ class MaskingPlaybackService : MediaSessionService() {
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 handler.removeCallbacks(stopPausedService)
                 if (playWhenReady) {
+                    player.setSoftStartFade(effectiveFade())
                     if (uiForeground) player.startCapture()
                 } else {
                     player.stopCapture()
@@ -227,8 +229,10 @@ class MaskingPlaybackService : MediaSessionService() {
                     broadcastTimer()
                 }
                 COMMAND_SET_ADAPTIVE_PARAMS -> {
-                    adaptiveSensitivity = args.getFloat(ARG_SENSITIVITY, 0.5f).coerceIn(0f, 1f)
-                    adaptiveDelay = args.getFloat(ARG_DELAY, 0.5f).coerceIn(0f, 1f)
+                    adaptiveModeEnabled = args.getBoolean(ARG_ENABLED, true)
+                    adaptiveSwitching = args.getFloat(ARG_SWITCHING, 0.5f).coerceIn(0f, 1f)
+                    adaptiveFade = args.getFloat(ARG_FADE, 0.5f).coerceIn(0f, 1f)
+                    player.setSoftStartFade(effectiveFade())
                 }
                 COMMAND_SET_UI_FOREGROUND -> {
                     uiForeground = args.getBoolean(ARG_ENABLED, false)
@@ -357,10 +361,12 @@ class MaskingPlaybackService : MediaSessionService() {
             manualBaseline = null
             manualShiftUpdates = 0
         }
-        if (adaptiveSensitivity <= 0f) return
-        val requiredImprovement = scoreImprovementForSensitivity(adaptiveSensitivity)
-        val requiredStable = stableUpdatesForDelay(adaptiveDelay)
-        val cooldownMs = cooldownMsForDelay(adaptiveDelay)
+        // Adaptive ON forces mid params; OFF uses live Switching/Fade.
+        val switching = if (adaptiveModeEnabled) ADAPTIVE_MID else adaptiveSwitching
+        val fade = if (adaptiveModeEnabled) ADAPTIVE_MID else adaptiveFade
+        val requiredImprovement = scoreImprovementForSwitching(switching)
+        val requiredStable = stableUpdatesForFade(fade)
+        val cooldownMs = cooldownMsForFade(fade)
         val now = SystemClock.elapsedRealtime()
         val suggested = analysis.suggestedSoundId
         val improvement = maskingScore(suggested, analysis.melBandEnergies) -
@@ -379,9 +385,12 @@ class MaskingPlaybackService : MediaSessionService() {
         candidateUpdates = 0
     }
 
-    /** Higher UI sensitivity → lower score-improvement gate. 0→0.20, 0.5→0.10, 1→0.05. */
-    private fun scoreImprovementForSensitivity(sensitivity: Float): Float {
-        val t = sensitivity.coerceIn(0f, 1f)
+    private fun effectiveFade(): Float =
+        if (adaptiveModeEnabled) ADAPTIVE_MID else adaptiveFade
+
+    /** Higher Switching → lower score-improvement gate. 0→0.20, 0.5→0.10, 1→0.05. */
+    private fun scoreImprovementForSwitching(switching: Float): Float {
+        val t = switching.coerceIn(0f, 1f)
         return if (t <= 0.5f) {
             SCORE_IMPROVEMENT_MAX - (t / 0.5f) * (SCORE_IMPROVEMENT_MAX - SCORE_IMPROVEMENT_MID)
         } else {
@@ -389,15 +398,15 @@ class MaskingPlaybackService : MediaSessionService() {
         }
     }
 
-    /** UI delay: 0 = Stable (patient), 1 = Quick. Maps to high→low stable updates / cooldown. */
-    private fun stableUpdatesForDelay(delay: Float): Int {
-        val patience = 1f - delay.coerceIn(0f, 1f)
+    /** Fade: 0 = Gentle (patient), 1 = Fast. Maps to high→low stable updates / cooldown. */
+    private fun stableUpdatesForFade(fade: Float): Int {
+        val patience = 1f - fade.coerceIn(0f, 1f)
         return (1f + patience * 5f).toInt().coerceIn(STABLE_UPDATES_MIN, STABLE_UPDATES_MAX)
     }
 
-    /** UI delay: 0 = Stable, 1 = Quick. */
-    private fun cooldownMsForDelay(delay: Float): Long {
-        val patience = 1f - delay.coerceIn(0f, 1f)
+    /** Fade: 0 = Gentle, 1 = Fast. */
+    private fun cooldownMsForFade(fade: Float): Long {
+        val patience = 1f - fade.coerceIn(0f, 1f)
         return if (patience <= 0.5f) {
             (COOLDOWN_MS_MIN + (patience / 0.5f) * (COOLDOWN_MS_MID - COOLDOWN_MS_MIN)).toLong()
         } else {
@@ -439,8 +448,8 @@ class MaskingPlaybackService : MediaSessionService() {
         const val COMMAND_GET_AUDIO_METRICS = "com.noiseshield.app.GET_AUDIO_METRICS"
         const val ARG_DURATION_MS = "duration_ms"
         const val ARG_ENABLED = "enabled"
-        const val ARG_SENSITIVITY = "sensitivity"
-        const val ARG_DELAY = "delay"
+        const val ARG_SWITCHING = "switching"
+        const val ARG_FADE = "fade"
         const val ARG_RELATIVE_DBFS = "relative_dbfs"
         const val ARG_LEVEL_BUCKET = "level_bucket"
         const val ARG_SOUND_ID = "sound_id"
@@ -462,6 +471,7 @@ class MaskingPlaybackService : MediaSessionService() {
         private const val PAUSED_SERVICE_STOP_DELAY_MS = 30_000L
         private const val MEL_BANDS = 24
         private const val MIN_CONFIDENCE = 0.03f
+        private const val ADAPTIVE_MID = 0.5f
         private const val SCORE_IMPROVEMENT_MIN = 0.05f
         private const val SCORE_IMPROVEMENT_MID = 0.10f
         private const val SCORE_IMPROVEMENT_MAX = 0.20f

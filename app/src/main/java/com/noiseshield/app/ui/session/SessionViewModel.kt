@@ -61,11 +61,12 @@ enum class SessionRuntimeState {
 data class SessionUiState(
     val playing: Boolean = false,
     val sound: MaskingSoundId = MaskingSoundId.WHITE_NOISE,
-    val volume: Float = 0.3f,
+    /** App gain is always full; device media volume is the only level control. */
+    val volume: Float = 1.0f,
     val timerRemainingSec: Int? = null,
     val limitedMode: Boolean = true,
     val estimate: NoiseAnalysis? = null,
-    /** Fraction of user volume applied after ambient ducking (null when not analyzing). */
+    /** Fraction of full app gain applied after ambient ducking (null when not analyzing). */
     val maskIntensity: Float? = null,
     val coverState: CoverState? = null,
     /** Brief banner when adaptive mode auto-switches the mask. */
@@ -92,7 +93,6 @@ class SessionViewModel(
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var pendingStart = false
     private var uiForeground = false
-    private var volumePersistenceJob: Job? = null
     private var safetyMonitorJob: Job? = null
     private var timerDeadlineElapsedRealtime: Long? = null
     private var lastAppliedInputDeviceId: Int? = null
@@ -155,7 +155,7 @@ class SessionViewModel(
                         prefs = prefs,
                         favorites = prefs.favorites,
                         sound = if (!it.playing) prefs.lastSound else it.sound,
-                        volume = if (!it.playing) prefs.lastVolume else it.volume,
+                        volume = APP_VOLUME,
                         selectedInputFingerprint = prefs.preferredInput.fingerprint,
                         selectedOutputFingerprint = prefs.preferredOutput.fingerprint,
                     )
@@ -240,13 +240,11 @@ class SessionViewModel(
         }
         val current = _state.value
         mediaController.setMediaItem(NativeMaskingPlayer.mediaItemFor(current.sound))
-        mediaController.volume = current.volume
+        mediaController.volume = APP_VOLUME
         mediaController.prepare()
         mediaController.play()
-        _state.update { it.copy(playing = true) }
-        if (!current.prefs.safetyWarningAcknowledged &&
-            (current.volume > 0.7f || isSystemMediaVolumeHigh())
-        ) {
+        _state.update { it.copy(playing = true, volume = APP_VOLUME) }
+        if (!current.prefs.safetyWarningAcknowledged && isSystemMediaVolumeHigh()) {
             _state.update { it.copy(showSafetyWarning = true) }
         }
         safetyMonitorJob?.cancel()
@@ -255,9 +253,7 @@ class SessionViewModel(
                 delay(1_000L)
                 val latest = _state.value
                 if (!latest.playing) break
-                if (!latest.prefs.safetyWarningAcknowledged &&
-                    (latest.volume > 0.7f || isSystemMediaVolumeHigh())
-                ) {
+                if (!latest.prefs.safetyWarningAcknowledged && isSystemMediaVolumeHigh()) {
                     _state.update { it.copy(showSafetyWarning = true) }
                 }
             }
@@ -265,7 +261,7 @@ class SessionViewModel(
         setUiForeground(uiForeground)
         viewModelScope.launch {
             prefsRepo.setLastSound(current.sound)
-            prefsRepo.setLastVolume(current.volume)
+            prefsRepo.setLastVolume(APP_VOLUME)
         }
     }
 
@@ -290,21 +286,44 @@ class SessionViewModel(
         viewModelScope.launch { prefsRepo.setLastSound(sound) }
     }
 
-    fun setVolume(volume: Float) {
-        val clamped = volume.coerceIn(0f, 1f)
-        controller?.volume = clamped
+    fun setAdaptiveMode(enabled: Boolean) {
         _state.update {
-            it.copy(
-                volume = clamped,
-                showSafetyWarning = it.showSafetyWarning ||
-                    (clamped > 0.7f && !it.prefs.safetyWarningAcknowledged),
-            )
+            it.copy(prefs = it.prefs.copy(adaptiveModeEnabled = enabled))
         }
-        volumePersistenceJob?.cancel()
-        volumePersistenceJob = viewModelScope.launch {
-            delay(300)
-            prefsRepo.setLastVolume(clamped)
+        sendAdaptiveParams(
+            enabled = enabled,
+            switching = _state.value.prefs.adaptiveSwitching,
+            fade = _state.value.prefs.adaptiveFade,
+        )
+        viewModelScope.launch { prefsRepo.setAdaptiveModeEnabled(enabled) }
+    }
+
+    fun setAdaptiveSwitching(value: Float) {
+        if (_state.value.prefs.adaptiveModeEnabled) return
+        val clamped = value.coerceIn(0f, 1f)
+        _state.update {
+            it.copy(prefs = it.prefs.copy(adaptiveSwitching = clamped))
         }
+        sendAdaptiveParams(
+            enabled = false,
+            switching = clamped,
+            fade = _state.value.prefs.adaptiveFade,
+        )
+        viewModelScope.launch { prefsRepo.setAdaptiveSwitching(clamped) }
+    }
+
+    fun setAdaptiveFade(value: Float) {
+        if (_state.value.prefs.adaptiveModeEnabled) return
+        val clamped = value.coerceIn(0f, 1f)
+        _state.update {
+            it.copy(prefs = it.prefs.copy(adaptiveFade = clamped))
+        }
+        sendAdaptiveParams(
+            enabled = false,
+            switching = _state.value.prefs.adaptiveSwitching,
+            fade = clamped,
+        )
+        viewModelScope.launch { prefsRepo.setAdaptiveFade(clamped) }
     }
 
     fun setTimerMinutes(minutes: Int?) {
@@ -338,32 +357,6 @@ class SessionViewModel(
             LocaleListCompat.forLanguageTags(language.tag)
         }
         AppCompatDelegate.setApplicationLocales(locales)
-    }
-
-    fun setAdaptiveSensitivity(value: Float) {
-        if (_state.value.playing) return
-        val clamped = value.coerceIn(0f, 1f)
-        _state.update {
-            it.copy(prefs = it.prefs.copy(adaptiveSensitivity = clamped))
-        }
-        sendAdaptiveParams(
-            sensitivity = clamped,
-            delay = _state.value.prefs.adaptiveDelay,
-        )
-        viewModelScope.launch { prefsRepo.setAdaptiveSensitivity(clamped) }
-    }
-
-    fun setAdaptiveDelay(value: Float) {
-        if (_state.value.playing) return
-        val clamped = value.coerceIn(0f, 1f)
-        _state.update {
-            it.copy(prefs = it.prefs.copy(adaptiveDelay = clamped))
-        }
-        sendAdaptiveParams(
-            sensitivity = _state.value.prefs.adaptiveSensitivity,
-            delay = clamped,
-        )
-        viewModelScope.launch { prefsRepo.setAdaptiveDelay(clamped) }
     }
 
     fun setInputDevice(fingerprint: String) {
@@ -455,7 +448,6 @@ class SessionViewModel(
         val adaptiveSwitch = if (
             sound != previousSound &&
             _state.value.playing &&
-            _state.value.prefs.adaptiveSensitivity > 0f &&
             !_state.value.limitedMode &&
             sound == _state.value.estimate?.suggestedSoundId
         ) {
@@ -469,7 +461,7 @@ class SessionViewModel(
             it.copy(
                 playing = player.playWhenReady,
                 sound = sound,
-                volume = player.volume,
+                volume = APP_VOLUME,
                 runtimeState = runtime,
                 adaptiveSwitchTo = adaptiveSwitch,
                 maskIntensity = if (player.playWhenReady) it.maskIntensity else null,
@@ -512,10 +504,11 @@ class SessionViewModel(
         controller?.sendCustomCommand(SessionCommand(action, Bundle.EMPTY), args)
     }
 
-    private fun sendAdaptiveParams(sensitivity: Float, delay: Float) {
+    private fun sendAdaptiveParams(enabled: Boolean, switching: Float, fade: Float) {
         val args = Bundle().apply {
-            putFloat(MaskingPlaybackService.ARG_SENSITIVITY, sensitivity.coerceIn(0f, 1f))
-            putFloat(MaskingPlaybackService.ARG_DELAY, delay.coerceIn(0f, 1f))
+            putBoolean(MaskingPlaybackService.ARG_ENABLED, enabled)
+            putFloat(MaskingPlaybackService.ARG_SWITCHING, switching.coerceIn(0f, 1f))
+            putFloat(MaskingPlaybackService.ARG_FADE, fade.coerceIn(0f, 1f))
         }
         controller?.sendCustomCommand(
             SessionCommand(MaskingPlaybackService.COMMAND_SET_ADAPTIVE_PARAMS, Bundle.EMPTY),
@@ -533,9 +526,13 @@ class SessionViewModel(
     private fun applyPreferencesToController(prefs: UserPreferences) {
         controller?.apply {
             setMediaItem(NativeMaskingPlayer.mediaItemFor(prefs.lastSound))
-            volume = prefs.lastVolume.coerceIn(0f, 1f)
+            volume = APP_VOLUME
         }
-        sendAdaptiveParams(prefs.adaptiveSensitivity, prefs.adaptiveDelay)
+        sendAdaptiveParams(
+            enabled = prefs.adaptiveModeEnabled,
+            switching = prefs.adaptiveSwitching,
+            fade = prefs.adaptiveFade,
+        )
         applyAudioRouting(prefs)
     }
 
@@ -591,6 +588,8 @@ class SessionViewModel(
     }
 
     companion object {
+        private const val APP_VOLUME = 1.0f
+
         fun factory(app: NoiseShieldApp): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
