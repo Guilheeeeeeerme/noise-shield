@@ -54,7 +54,15 @@
     <string name="label_timer">Minuteur</string>
     <string name="label_sounds">Sons</string>
     <string name="label_adaptive_mode">Mode adaptatif</string>
-    <string name="adaptive_mode_description">Met à jour selon la pièce. Désactivez pour régler Basculement et Fondu vous-même.</string>
+    <string name="adaptive_mode_description">S’adapte automatiquement à la pièce selon vos réglages Basculement et Fondu.</string>
+    <string name="label_masking_mode">Environnement</string>
+    <string name="masking_mode_description">Choisissez ce qui correspond le mieux à votre environnement. Vous pouvez changer à tout moment.</string>
+    <string name="masking_mode_manual_description">Choisissez un mode maintenant ; l’accès au micro active les ajustements automatiques.</string>
+    <string name="mode_normal">Normal</string>
+    <string name="mode_quiet">Calme</string>
+    <string name="mode_home">Maison</string>
+    <string name="mode_busy">Animé</string>
+    <string name="mode_travel">Voyage</string>
     <string name="label_switching">Basculement</string>
     <string name="switching_selective">Sélectif</string>
     <string name="switching_eager">Réactif</string>

@@ -40,6 +40,7 @@ class NativeMaskingPlayer(
     }
 
     private var initialized = false
+    private var loadingAsset = false
     private var playWhenReady = false
     private var playWhenReadyChangeReason = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
     private var playbackState = Player.STATE_IDLE
@@ -52,7 +53,7 @@ class NativeMaskingPlayer(
     private var ambientScale = 1f
     /** Audio-focus duck multiplier (1 = unducked). */
     private var focusDuck = 1f
-    /** Soft-start multiplier: 0 at Play, then ramps to 1 over fade duration. */
+    /** Soft-start multiplier: begins audibly, then ramps to 1 over fade duration. */
     private var introScale = 0f
     /** Fade slider 0=Gentle (long) … 1=Fast (short). Mid 0.5 → 2s. */
     private var softStartFade = 0.5f
@@ -66,7 +67,8 @@ class NativeMaskingPlayer(
             if (!playWhenReady) return
             val rampMs = introRampMs().coerceAtLeast(1f)
             val elapsed = System.currentTimeMillis() - introRampStartedAtMs
-            introScale = (elapsed.toFloat() / rampMs).coerceIn(0f, 1f)
+            val progress = (elapsed.toFloat() / rampMs).coerceIn(0f, 1f)
+            introScale = INTRO_SCALE_MIN + progress * (1f - INTRO_SCALE_MIN)
             applyEffectiveVolume()
             if (introScale < 1f) {
                 handler.postDelayed(this, INTRO_TICK_MS)
@@ -87,7 +89,7 @@ class NativeMaskingPlayer(
                 handler.post {
                     playbackState = when {
                         recovery != 0 -> Player.STATE_BUFFERING
-                        initialized -> Player.STATE_READY
+                        initialized && !loadingAsset -> Player.STATE_READY
                         else -> Player.STATE_IDLE
                     }
                     invalidateState()
@@ -245,7 +247,7 @@ class NativeMaskingPlayer(
         return Futures.immediateVoidFuture()
     }
 
-    fun setSound(sound: MaskingSoundId, crossfadeSeconds: Float = 0.75f) {
+    fun setSound(sound: MaskingSoundId, crossfadeSeconds: Float = transitionSeconds()) {
         if (sound == selectedSound && initialized) return
         selectedSound = sound
         if (initialized) prepareSound(sound, crossfadeSeconds)
@@ -325,7 +327,7 @@ class NativeMaskingPlayer(
 
     private fun startSoftIntro() {
         handler.removeCallbacks(introRampTick)
-        introScale = 0f
+        introScale = INTRO_SCALE_MIN
         applyEffectiveVolume()
         introRampStartedAtMs = System.currentTimeMillis()
         handler.post(introRampTick)
@@ -380,9 +382,17 @@ class NativeMaskingPlayer(
         decodeJob?.cancel()
         val assetFile = sound.assetFile
         if (assetFile == null) {
+            loadingAsset = false
             engine.setSound(sound, crossfadeSeconds)
+            playbackState = Player.STATE_READY
+            invalidateState()
             return
         }
+        loadingAsset = true
+        playbackState = Player.STATE_BUFFERING
+        // Keep output audible while the requested ambience is decoded.
+        engine.setSound(MaskingSoundId.PINK_NOISE, 0f)
+        invalidateState()
         decodeJob = scope.launch(Dispatchers.IO) {
             val decoded = AssetSoundDecoder.decode(context, sound)
             if (decoded != null) {
@@ -390,11 +400,16 @@ class NativeMaskingPlayer(
             }
             handler.post {
                 if (selectedSound == sound && initialized) {
-                    engine.setSound(sound, crossfadeSeconds)
+                    if (decoded != null) engine.setSound(sound, crossfadeSeconds)
+                    loadingAsset = false
+                    playbackState = Player.STATE_READY
+                    invalidateState()
                 }
             }
         }
     }
+
+    private fun transitionSeconds(): Float = introRampMs() / 1_000f
 
     private fun requestAudioFocus(): Int {
         val request = focusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
@@ -445,7 +460,8 @@ class NativeMaskingPlayer(
     companion object {
         private const val ENGINE_RELEASE_DELAY_MS = 30_000L
         private const val DUCK_FACTOR = 0.2f
-        private const val AMBIENT_SCALE_MIN = 0.05f
+        private const val AMBIENT_SCALE_MIN = 0.20f
+        private const val INTRO_SCALE_MIN = 0.20f
         /** Fade Fast (1) → 1s; mid (0.5) → 2s; Gentle (0) → 4s. */
         private const val INTRO_RAMP_MS_MIN = 1_000f
         private const val INTRO_RAMP_MS_MID = 2_000f

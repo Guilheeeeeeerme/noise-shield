@@ -92,7 +92,9 @@ void MaskingPlayer::setPlaying(bool playing) {
 
 void MaskingPlayer::setVolume(float sliderPosition) {
     const float slider = std::clamp(sliderPosition, 0.0f, 1.0f);
-    targetGain_.store(slider * slider, std::memory_order_release);
+    // Kotlin already supplies a perceptually mapped adaptive gain. Squaring it
+    // again made quiet-room output effectively inaudible (0.12 -> 0.0144).
+    targetGain_.store(slider, std::memory_order_release);
 }
 
 void MaskingPlayer::loadPcm16(

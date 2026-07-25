@@ -72,7 +72,7 @@ class MaskingPlaybackService : MediaSessionService() {
                 timerDeadlineElapsedRealtime = null
                 player.pause()
                 player.stopCapture()
-                broadcastTimer()
+                broadcastTimer(completed = true)
                 return
             }
             broadcastTimer()
@@ -273,10 +273,11 @@ class MaskingPlaybackService : MediaSessionService() {
         }
     }
 
-    private fun broadcastTimer() {
+    private fun broadcastTimer(completed: Boolean = false) {
         val args = Bundle().apply {
             putLong(ARG_TIMER_DEADLINE, timerDeadlineElapsedRealtime ?: 0L)
             putLong(ARG_TIMER_REMAINING, timerRemainingWhenPausedMs ?: 0L)
+            putBoolean(ARG_TIMER_COMPLETED, completed)
         }
         session.broadcastCustomCommand(SessionCommand(COMMAND_TIMER_EVENT, Bundle.EMPTY), args)
     }
@@ -296,8 +297,8 @@ class MaskingPlaybackService : MediaSessionService() {
         }
         ambientTargetScale = target
         if (!hasAmbientScale) {
-            // Stay at min until envelope raises toward the measured target (no snap).
-            smoothedAmbientScale = AMBIENT_SCALE_MIN
+            // Begin from the currently audible level; never snap to near-silence.
+            smoothedAmbientScale = 1f
             hasAmbientScale = true
             player.setAmbientScale(smoothedAmbientScale)
             handler.removeCallbacks(envelopeTick)
@@ -363,10 +364,9 @@ class MaskingPlaybackService : MediaSessionService() {
         }
         if (!adaptiveModeEnabled) return
         val switching = adaptiveSwitching
-        val fade = adaptiveFade
         val requiredImprovement = scoreImprovementForSwitching(switching)
-        val requiredStable = stableUpdatesForFade(fade)
-        val cooldownMs = cooldownMsForFade(fade)
+        val requiredStable = stableUpdatesForSwitching(switching)
+        val cooldownMs = cooldownMsForSwitching(switching)
         val now = SystemClock.elapsedRealtime()
         val suggested = analysis.suggestedSoundId
         val improvement = maskingScore(suggested, analysis.melBandEnergies) -
@@ -397,15 +397,15 @@ class MaskingPlaybackService : MediaSessionService() {
         }
     }
 
-    /** Fade: 0 = Gentle (patient), 1 = Fast. Maps to high→low stable updates / cooldown. */
-    private fun stableUpdatesForFade(fade: Float): Int {
-        val patience = 1f - fade.coerceIn(0f, 1f)
+    /** Switching: 0 = Selective, 1 = Eager. */
+    private fun stableUpdatesForSwitching(switching: Float): Int {
+        val patience = 1f - switching.coerceIn(0f, 1f)
         return (1f + patience * 5f).toInt().coerceIn(STABLE_UPDATES_MIN, STABLE_UPDATES_MAX)
     }
 
-    /** Fade: 0 = Gentle, 1 = Fast. */
-    private fun cooldownMsForFade(fade: Float): Long {
-        val patience = 1f - fade.coerceIn(0f, 1f)
+    /** Switching: 0 = Selective, 1 = Eager. */
+    private fun cooldownMsForSwitching(switching: Float): Long {
+        val patience = 1f - switching.coerceIn(0f, 1f)
         return if (patience <= 0.5f) {
             (COOLDOWN_MS_MIN + (patience / 0.5f) * (COOLDOWN_MS_MID - COOLDOWN_MS_MIN)).toLong()
         } else {
@@ -463,6 +463,7 @@ class MaskingPlaybackService : MediaSessionService() {
         const val ARG_OUTPUT_DEVICE_ID = "output_device_id"
         const val ARG_TIMER_DEADLINE = "timer_deadline"
         const val ARG_TIMER_REMAINING = "timer_remaining"
+        const val ARG_TIMER_COMPLETED = "timer_completed"
         const val ARG_XRUN_COUNT = "xrun_count"
         private const val TIMER_TICK_MS = 1_000L
         private const val BREAK_REMINDER_TICK_MS = 60_000L
@@ -486,7 +487,7 @@ class MaskingPlaybackService : MediaSessionService() {
         private const val RELEASE_ALPHA = 0.10f
         private const val AMBIENT_DBFS_FLOOR = -50f
         private const val AMBIENT_DBFS_CEILING = -25f
-        private const val AMBIENT_SCALE_MIN = 0.05f
+        private const val AMBIENT_SCALE_MIN = 0.20f
         private const val COVERED_ENTER_SELF_MATCH = 0.65f
         private const val COVERED_EXIT_SELF_MATCH = 0.55f
         private const val COVERED_ENTER_RESIDUAL_DBFS = -40f

@@ -54,7 +54,15 @@
     <string name="label_sounds">Sons</string>
     <string name="session_controls_locked_hint">Pause para mudar som ou dispositivos.</string>
     <string name="label_adaptive_mode">Modo adaptativo</string>
-    <string name="adaptive_mode_description">Continua atualizando ao ambiente. Desligue para ajustar Troca e Fade você mesmo.</string>
+    <string name="adaptive_mode_description">Acompanha o ambiente automaticamente usando seus ajustes de Troca e Fade.</string>
+    <string name="label_masking_mode">Ambiente</string>
+    <string name="masking_mode_description">Escolha o que melhor combina com o ambiente. Você pode trocar a qualquer momento.</string>
+    <string name="masking_mode_manual_description">Escolha um modo agora; o acesso ao microfone ativa ajustes automáticos.</string>
+    <string name="mode_normal">Normal</string>
+    <string name="mode_quiet">Silencioso</string>
+    <string name="mode_home">Casa</string>
+    <string name="mode_busy">Movimentado</string>
+    <string name="mode_travel">Viagem</string>
     <string name="label_switching">Troca</string>
     <string name="switching_selective">Seletiva</string>
     <string name="switching_eager">Ágil</string>

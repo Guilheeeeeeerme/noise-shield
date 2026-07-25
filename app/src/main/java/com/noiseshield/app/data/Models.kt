@@ -33,6 +33,14 @@ enum class CoverState {
     COVERED,
 }
 
+enum class MaskingPreset(val switching: Float, val fade: Float) {
+    NORMAL(0.5f, 0.5f),
+    QUIET(0.15f, 0.15f),
+    HOME(0.35f, 0.35f),
+    BUSY(0.75f, 0.7f),
+    TRAVEL(1f, 0.9f),
+}
+
 data class NoiseAnalysis(
     val relativeDbfs: Float,
     val levelBucket: NoiseLevelBucket,

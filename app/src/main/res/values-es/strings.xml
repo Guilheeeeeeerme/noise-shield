@@ -54,7 +54,15 @@
     <string name="label_timer">Temporizador</string>
     <string name="label_sounds">Sonidos</string>
     <string name="label_adaptive_mode">Modo adaptativo</string>
-    <string name="adaptive_mode_description">Sigue actualizando a la habitación. Apágalo para ajustar Cambio y Fade tú mismo.</string>
+    <string name="adaptive_mode_description">Se adapta automáticamente al entorno usando tus ajustes de Cambio y Fade.</string>
+    <string name="label_masking_mode">Entorno</string>
+    <string name="masking_mode_description">Elige lo que mejor coincida con tu entorno. Puedes cambiar en cualquier momento.</string>
+    <string name="masking_mode_manual_description">Elige un modo ahora; el acceso al micrófono activa los ajustes automáticos.</string>
+    <string name="mode_normal">Normal</string>
+    <string name="mode_quiet">Silencioso</string>
+    <string name="mode_home">Hogar</string>
+    <string name="mode_busy">Concurrido</string>
+    <string name="mode_travel">Viaje</string>
     <string name="label_switching">Cambio</string>
     <string name="switching_selective">Selectiva</string>
     <string name="switching_eager">Rápida</string>

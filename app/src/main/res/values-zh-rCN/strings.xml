@@ -54,7 +54,15 @@
     <string name="label_timer">定时器</string>
     <string name="label_sounds">声音</string>
     <string name="label_adaptive_mode">自适应模式</string>
-    <string name="adaptive_mode_description">持续根据环境更新。关闭后可自行调节切换与淡入。</string>
+    <string name="adaptive_mode_description">使用你的切换与淡入设置自动适应环境。</string>
+    <string name="label_masking_mode">环境</string>
+    <string name="masking_mode_description">选择最符合周围环境的模式，可随时切换。</string>
+    <string name="masking_mode_manual_description">现在选择模式；授予麦克风权限后可自动调整。</string>
+    <string name="mode_normal">普通</string>
+    <string name="mode_quiet">安静</string>
+    <string name="mode_home">居家</string>
+    <string name="mode_busy">繁忙</string>
+    <string name="mode_travel">出行</string>
     <string name="label_switching">切换</string>
     <string name="switching_selective">谨慎</string>
     <string name="switching_eager">灵敏</string>

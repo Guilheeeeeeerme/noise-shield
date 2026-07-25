@@ -21,12 +21,7 @@ data class UserPreferences(
     /** Unused for UI; app gain is always 1.0 (device volume only). Kept for migration. */
     val lastVolume: Float = 1.0f,
     val favorites: Set<MaskingSoundId> = emptySet(),
-    /** When true, auto-switch uses fixed mid Switching/Fade. Default ON. */
-    val adaptiveModeEnabled: Boolean = true,
-    /** Switching when Adaptive is OFF. Default mid. Selective (0) → Eager (1). */
-    val adaptiveSwitching: Float = 0.5f,
-    /** Fade when Adaptive is OFF. Default mid. Gentle (0) → Fast (1). Soft-start + switch patience. */
-    val adaptiveFade: Float = 0.5f,
+    val maskingPreset: MaskingPreset = MaskingPreset.NORMAL,
     val safetyWarningAcknowledged: Boolean = false,
     val feedbackCounters: Map<MaskingSoundId, Pair<Int, Int>> = emptyMap(),
     val preferredInput: AudioDevicePreference = AudioDevicePreference(),
@@ -40,6 +35,8 @@ class PreferencesRepository(private val context: Context) {
         val lastSound = stringPreferencesKey("last_sound")
         val lastVolume = floatPreferencesKey("last_volume")
         val favorites = stringSetPreferencesKey("favorites")
+        val maskingPreset = stringPreferencesKey("masking_preset")
+        /** Legacy keys retained for migration. */
         val adaptiveModeEnabled = booleanPreferencesKey("adaptive_mode_enabled")
         val adaptiveSwitching = floatPreferencesKey("adaptive_switching")
         val adaptiveFade = floatPreferencesKey("adaptive_fade")
@@ -53,21 +50,6 @@ class PreferencesRepository(private val context: Context) {
     }
 
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
-        val storedSwitching = prefs[Keys.adaptiveSwitching] ?: prefs[Keys.adaptiveSensitivity]
-        val storedFade = prefs[Keys.adaptiveFade] ?: prefs[Keys.adaptiveDelay]
-        val storedMode = prefs[Keys.adaptiveModeEnabled]
-        // Prior Off via sensitivity=0 (no mode key) → Adaptive OFF, reset switching to mid.
-        val adaptiveModeEnabled = when {
-            storedMode != null -> storedMode
-            storedSwitching != null && storedSwitching <= 0f -> false
-            else -> true
-        }
-        val adaptiveSwitching = when {
-            storedSwitching != null && storedSwitching <= 0f && storedMode == null -> 0.5f
-            storedSwitching != null -> storedSwitching.coerceIn(0f, 1f)
-            else -> 0.5f
-        }
-        val adaptiveFade = (storedFade ?: 0.5f).coerceIn(0f, 1f)
         UserPreferences(
             onboardingDone = prefs[Keys.onboardingDone] ?: false,
             themeMode = runCatching {
@@ -80,9 +62,11 @@ class PreferencesRepository(private val context: Context) {
             favorites = (prefs[Keys.favorites] ?: emptySet()).mapNotNull {
                 runCatching { MaskingSoundId.valueOf(it) }.getOrNull()
             }.toSet(),
-            adaptiveModeEnabled = adaptiveModeEnabled,
-            adaptiveSwitching = adaptiveSwitching,
-            adaptiveFade = adaptiveFade,
+            maskingPreset = runCatching {
+                MaskingPreset.valueOf(
+                    prefs[Keys.maskingPreset] ?: MaskingPreset.NORMAL.name,
+                )
+            }.getOrDefault(MaskingPreset.NORMAL),
             safetyWarningAcknowledged = prefs[Keys.safetyWarningAcknowledged] ?: false,
             feedbackCounters = decodeFeedbackCounters(prefs[Keys.feedbackCounters].orEmpty()),
             preferredInput = AudioDevicePreference(
@@ -120,20 +104,13 @@ class PreferencesRepository(private val context: Context) {
         }
     }
 
-    suspend fun setAdaptiveModeEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.adaptiveModeEnabled] = enabled }
-    }
-
-    suspend fun setAdaptiveSwitching(value: Float) {
+    suspend fun setMaskingPreset(preset: MaskingPreset) {
         context.dataStore.edit {
-            it[Keys.adaptiveSwitching] = value.coerceIn(0f, 1f)
+            it[Keys.maskingPreset] = preset.name
+            it.remove(Keys.adaptiveModeEnabled)
+            it.remove(Keys.adaptiveSwitching)
+            it.remove(Keys.adaptiveFade)
             it.remove(Keys.adaptiveSensitivity)
-        }
-    }
-
-    suspend fun setAdaptiveFade(value: Float) {
-        context.dataStore.edit {
-            it[Keys.adaptiveFade] = value.coerceIn(0f, 1f)
             it.remove(Keys.adaptiveDelay)
         }
     }

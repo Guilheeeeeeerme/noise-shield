@@ -31,12 +31,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -50,6 +52,7 @@ import com.noiseshield.app.data.AudioDevicePreference
 import com.noiseshield.app.data.AudioRouteDevice
 import com.noiseshield.app.data.CoverState
 import com.noiseshield.app.data.MaskingSoundId
+import com.noiseshield.app.data.MaskingPreset
 import com.noiseshield.app.data.NoiseLevelBucket
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -62,17 +65,14 @@ fun SessionScreen(
     onToggleFavorite: (MaskingSoundId) -> Unit,
     onSettings: () -> Unit,
     onRequestMic: () -> Unit,
-    onAdaptiveMode: (Boolean) -> Unit,
-    onAdaptiveSwitching: (Float) -> Unit,
-    onAdaptiveFade: (Float) -> Unit,
+    onMaskingPreset: (MaskingPreset) -> Unit,
     onInputDevice: (String) -> Unit,
     onOutputDevice: (String) -> Unit,
     onDismissSafetyWarning: () -> Unit,
     onDismissBreakReminder: () -> Unit,
 ) {
     val sessionLocked = state.playing
-    val adaptiveOn = state.prefs.adaptiveModeEnabled
-    val slidersEnabled = adaptiveOn
+    var routesExpanded by rememberSaveable { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -98,71 +98,30 @@ fun SessionScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (state.limitedMode) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f))
-                        .padding(12.dp),
-                ) {
-                    Column {
-                        Text(
-                            stringResource(R.string.limited_mode_title),
-                            style = MaterialTheme.typography.titleSmall,
-                        )
-                        Text(
-                            stringResource(R.string.limited_mode_body),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        TextButton(onClick = onRequestMic) {
-                            Text(stringResource(R.string.action_grant_mic))
-                        }
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-            }
-
-            NoiseLevelIndicator(
-                level = state.estimate?.levelBucket,
-                relativeDbfs = state.estimate?.relativeDbfs,
-                maskIntensity = state.maskIntensity,
-                melEnergies = state.estimate?.melBandEnergies.orEmpty(),
-                suggestedSound = state.estimate?.suggestedSoundId,
-                coverState = state.coverState,
-                limited = state.limitedMode,
+            Text(
+                soundLabel(state.sound),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
             )
-
-            if (!state.limitedMode) {
-                Spacer(Modifier.height(6.dp))
+            state.timerRemainingSec?.let { sec ->
                 Text(
-                    stringResource(R.string.placement_tip),
+                    stringResource(R.string.timer_remaining, sec / 60, sec % 60),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-
-            val adaptiveSwitchTo = state.adaptiveSwitchTo
-            if (adaptiveSwitchTo != null) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    stringResource(
-                        R.string.adaptive_switching,
-                        soundLabel(adaptiveSwitchTo),
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
 
             Box(
                 modifier = Modifier
                     .size(96.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primary)
-                    .clickable(onClick = onTogglePlay),
+                    .clickable(
+                        enabled = state.runtimeState != SessionRuntimeState.INITIALIZING,
+                        onClick = onTogglePlay,
+                    )
+                    .alpha(if (state.runtimeState == SessionRuntimeState.INITIALIZING) 0.45f else 1f),
                 contentAlignment = Alignment.Center,
             ) {
                 if (state.playing) {
@@ -184,7 +143,7 @@ fun SessionScreen(
 
             Spacer(Modifier.height(8.dp))
             Text(
-                if (state.playing) stringResource(R.string.session_playing)
+                if (state.audible) stringResource(R.string.session_playing)
                 else stringResource(R.string.session_ready),
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -193,6 +152,11 @@ fun SessionScreen(
                     when (state.runtimeState) {
                         SessionRuntimeState.INITIALIZING -> R.string.state_initializing
                         SessionRuntimeState.READY -> R.string.state_ready
+                        SessionRuntimeState.STARTING -> R.string.state_starting
+                        SessionRuntimeState.AUDIBLE -> R.string.state_audible
+                        SessionRuntimeState.FADING -> R.string.state_fading
+                        SessionRuntimeState.MUTED_BY_DEVICE -> R.string.state_muted_by_device
+                        SessionRuntimeState.TIMER_ENDED -> R.string.state_timer_ended
                         SessionRuntimeState.PERMISSION_REQUIRED -> R.string.state_permission_required
                         SessionRuntimeState.CAPTURING -> R.string.state_capturing
                         SessionRuntimeState.FOCUS_DELAYED -> R.string.state_focus_delayed
@@ -203,78 +167,75 @@ fun SessionScreen(
                 style = MaterialTheme.typography.bodySmall,
             )
 
-            Spacer(Modifier.height(20.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.label_adaptive_mode))
-                    Text(
-                        stringResource(R.string.adaptive_mode_description),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                Switch(
-                    checked = adaptiveOn,
-                    onCheckedChange = onAdaptiveMode,
+            if (state.runtimeState == SessionRuntimeState.MUTED_BY_DEVICE) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(R.string.media_volume_guidance),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .alpha(if (slidersEnabled) 1f else 0.45f),
+
+            Spacer(Modifier.height(20.dp))
+            Text(
+                stringResource(R.string.label_sounds),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.label_switching), modifier = Modifier.fillMaxWidth())
-                Slider(
-                    value = state.prefs.adaptiveSwitching,
-                    onValueChange = onAdaptiveSwitching,
-                    enabled = slidersEnabled,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        stringResource(R.string.switching_selective),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        stringResource(R.string.switching_eager),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.label_fade), modifier = Modifier.fillMaxWidth())
-                Slider(
-                    value = state.prefs.adaptiveFade,
-                    onValueChange = onAdaptiveFade,
-                    enabled = slidersEnabled,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        stringResource(R.string.fade_gentle),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        stringResource(R.string.fade_fast),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                MaskingSoundId.entries.sortedByDescending { it in state.favorites }.forEach { sound ->
+                    val selected = state.sound == sound
+                    val fav = sound in state.favorites
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .border(
+                                width = if (selected) 2.dp else 1.dp,
+                                color = if (selected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                                shape = RoundedCornerShape(20.dp),
+                            )
+                            .clickable { onSelectSound(sound) }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(soundLabel(sound))
+                        IconButton(
+                            onClick = { onToggleFavorite(sound) },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (fav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = stringResource(
+                                    if (fav) R.string.accessibility_remove_favorite
+                                    else R.string.accessibility_add_favorite,
+                                    soundLabel(sound),
+                                ),
+                                modifier = Modifier.size(18.dp),
+                                tint = if (fav) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            )
+                        }
+                    }
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            state.adaptiveSwitchTo?.let { adaptiveSwitchTo ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(R.string.adaptive_switching, soundLabel(adaptiveSwitchTo)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
             Text(stringResource(R.string.label_timer), modifier = Modifier.fillMaxWidth())
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -300,92 +261,83 @@ fun SessionScreen(
                     )
                 }
             }
-            state.timerRemainingSec?.let { sec ->
-                Text(
-                    stringResource(R.string.timer_remaining, sec / 60, sec % 60),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                )
-            }
 
             Spacer(Modifier.height(20.dp))
             Text(
-                stringResource(R.string.label_sounds),
+                stringResource(R.string.label_masking_mode),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (sessionLocked) {
-                Text(
-                    stringResource(R.string.session_controls_locked_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                )
-            }
+            Text(
+                stringResource(
+                    if (state.limitedMode) R.string.masking_mode_manual_description
+                    else R.string.masking_mode_description,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Spacer(Modifier.height(8.dp))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .alpha(if (sessionLocked) 0.45f else 1f),
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                MaskingSoundId.entries.sortedByDescending { it in state.favorites }.forEach { sound ->
-                    val selected = state.sound == sound
-                    val fav = sound in state.favorites
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .border(
-                                width = if (selected) 2.dp else 1.dp,
-                                color = if (selected) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
-                                },
-                                shape = RoundedCornerShape(20.dp),
-                            )
-                            .clickable(enabled = !sessionLocked) { onSelectSound(sound) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(soundLabel(sound))
-                        IconButton(
-                            onClick = { onToggleFavorite(sound) },
-                            enabled = !sessionLocked,
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = if (fav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                contentDescription = stringResource(
-                                    if (fav) R.string.accessibility_remove_favorite
-                                    else R.string.accessibility_add_favorite,
-                                    soundLabel(sound),
-                                ),
-                                modifier = Modifier.size(18.dp),
-                                tint = if (fav) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                            )
-                        }
-                    }
+                MaskingPreset.entries.forEach { preset ->
+                    FilterChip(
+                        selected = state.prefs.maskingPreset == preset,
+                        onClick = { onMaskingPreset(preset) },
+                        label = { Text(maskingPresetLabel(preset)) },
+                    )
+                }
+            }
+            if (state.limitedMode) {
+                TextButton(onClick = onRequestMic) {
+                    Text(stringResource(R.string.action_grant_mic))
                 }
             }
 
             Spacer(Modifier.height(24.dp))
-            AudioRoutePickers(
-                inputDevices = state.inputDevices,
-                outputDevices = state.outputDevices,
-                selectedInputFingerprint = state.selectedInputFingerprint,
-                selectedOutputFingerprint = state.selectedOutputFingerprint,
-                enabled = !sessionLocked,
-                onInputDevice = onInputDevice,
-                onOutputDevice = onOutputDevice,
-            )
+            if (!state.limitedMode && state.playing) {
+                NoiseLevelIndicator(
+                    level = state.estimate?.levelBucket,
+                    relativeDbfs = state.estimate?.relativeDbfs,
+                    maskIntensity = state.maskIntensity,
+                    melEnergies = state.estimate?.melBandEnergies.orEmpty(),
+                    suggestedSound = state.estimate?.suggestedSoundId,
+                    coverState = state.coverState,
+                    limited = false,
+                )
+            }
+
+            if (state.inputDevices.size > 1 || state.outputDevices.size > 1) {
+                TextButton(onClick = { routesExpanded = !routesExpanded }) {
+                    Text(
+                        stringResource(
+                            if (routesExpanded) R.string.action_hide_audio_devices
+                            else R.string.action_show_audio_devices,
+                        ),
+                    )
+                }
+                if (sessionLocked) {
+                    Text(
+                        stringResource(R.string.session_controls_locked_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (routesExpanded) {
+                    AudioRoutePickers(
+                        inputDevices = state.inputDevices,
+                        outputDevices = state.outputDevices,
+                        selectedInputFingerprint = state.selectedInputFingerprint,
+                        selectedOutputFingerprint = state.selectedOutputFingerprint,
+                        enabled = !sessionLocked,
+                        onInputDevice = onInputDevice,
+                        onOutputDevice = onOutputDevice,
+                    )
+                }
+            }
             Spacer(Modifier.height(32.dp))
         }
     }
@@ -625,6 +577,17 @@ private fun dbfsToMeterFill(relativeDbfs: Float): Float {
     val t = ((relativeDbfs + 60f) / 50f).coerceIn(0f, 1f)
     return 0.1f + t * 0.9f
 }
+
+@Composable
+private fun maskingPresetLabel(preset: MaskingPreset): String = stringResource(
+    when (preset) {
+        MaskingPreset.NORMAL -> R.string.mode_normal
+        MaskingPreset.QUIET -> R.string.mode_quiet
+        MaskingPreset.HOME -> R.string.mode_home
+        MaskingPreset.BUSY -> R.string.mode_busy
+        MaskingPreset.TRAVEL -> R.string.mode_travel
+    },
+)
 
 @Composable
 private fun soundLabel(sound: MaskingSoundId): String = stringResource(

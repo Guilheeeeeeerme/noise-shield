@@ -28,6 +28,7 @@ import com.noiseshield.app.data.AudioDevicePreference
 import com.noiseshield.app.data.AudioRouteDevice
 import com.noiseshield.app.data.CoverState
 import com.noiseshield.app.data.MaskingSoundId
+import com.noiseshield.app.data.MaskingPreset
 import com.noiseshield.app.data.NoiseAnalysis
 import com.noiseshield.app.data.NoiseLevelBucket
 import com.noiseshield.app.data.PreferencesRepository
@@ -51,6 +52,11 @@ import java.util.concurrent.CancellationException
 enum class SessionRuntimeState {
     INITIALIZING,
     READY,
+    STARTING,
+    AUDIBLE,
+    FADING,
+    MUTED_BY_DEVICE,
+    TIMER_ENDED,
     PERMISSION_REQUIRED,
     CAPTURING,
     FOCUS_DELAYED,
@@ -60,6 +66,8 @@ enum class SessionRuntimeState {
 
 data class SessionUiState(
     val playing: Boolean = false,
+    val audible: Boolean = false,
+    val systemMediaVolumePercent: Int = 0,
     val sound: MaskingSoundId = MaskingSoundId.WHITE_NOISE,
     /** App gain is always full; device media volume is the only level control. */
     val volume: Float = 1.0f,
@@ -243,7 +251,14 @@ class SessionViewModel(
         mediaController.volume = APP_VOLUME
         mediaController.prepare()
         mediaController.play()
-        _state.update { it.copy(playing = true, volume = APP_VOLUME) }
+        _state.update {
+            it.copy(
+                playing = true,
+                volume = APP_VOLUME,
+                runtimeState = SessionRuntimeState.STARTING,
+                systemMediaVolumePercent = systemMediaVolumePercent(),
+            )
+        }
         if (!current.prefs.safetyWarningAcknowledged && isSystemMediaVolumeHigh()) {
             _state.update { it.copy(showSafetyWarning = true) }
         }
@@ -253,6 +268,7 @@ class SessionViewModel(
                 delay(1_000L)
                 val latest = _state.value
                 if (!latest.playing) break
+                updateMediaVolumeState()
                 if (!latest.prefs.safetyWarningAcknowledged && isSystemMediaVolumeHigh()) {
                     _state.update { it.copy(showSafetyWarning = true) }
                 }
@@ -280,50 +296,21 @@ class SessionViewModel(
     }
 
     fun selectSound(sound: MaskingSoundId) {
-        if (_state.value.playing) return
         _state.update { it.copy(sound = sound) }
         controller?.setMediaItem(NativeMaskingPlayer.mediaItemFor(sound))
         viewModelScope.launch { prefsRepo.setLastSound(sound) }
     }
 
-    fun setAdaptiveMode(enabled: Boolean) {
+    fun setMaskingPreset(preset: MaskingPreset) {
         _state.update {
-            it.copy(prefs = it.prefs.copy(adaptiveModeEnabled = enabled))
-        }
-        sendAdaptiveParams(
-            enabled = enabled,
-            switching = _state.value.prefs.adaptiveSwitching,
-            fade = _state.value.prefs.adaptiveFade,
-        )
-        viewModelScope.launch { prefsRepo.setAdaptiveModeEnabled(enabled) }
-    }
-
-    fun setAdaptiveSwitching(value: Float) {
-        if (!_state.value.prefs.adaptiveModeEnabled) return
-        val clamped = value.coerceIn(0f, 1f)
-        _state.update {
-            it.copy(prefs = it.prefs.copy(adaptiveSwitching = clamped))
+            it.copy(prefs = it.prefs.copy(maskingPreset = preset))
         }
         sendAdaptiveParams(
             enabled = true,
-            switching = clamped,
-            fade = _state.value.prefs.adaptiveFade,
+            switching = preset.switching,
+            fade = preset.fade,
         )
-        viewModelScope.launch { prefsRepo.setAdaptiveSwitching(clamped) }
-    }
-
-    fun setAdaptiveFade(value: Float) {
-        if (!_state.value.prefs.adaptiveModeEnabled) return
-        val clamped = value.coerceIn(0f, 1f)
-        _state.update {
-            it.copy(prefs = it.prefs.copy(adaptiveFade = clamped))
-        }
-        sendAdaptiveParams(
-            enabled = true,
-            switching = _state.value.prefs.adaptiveSwitching,
-            fade = clamped,
-        )
-        viewModelScope.launch { prefsRepo.setAdaptiveFade(clamped) }
+        viewModelScope.launch { prefsRepo.setMaskingPreset(preset) }
     }
 
     fun setTimerMinutes(minutes: Int?) {
@@ -342,7 +329,6 @@ class SessionViewModel(
     }
 
     fun toggleFavorite(sound: MaskingSoundId) {
-        if (_state.value.playing) return
         viewModelScope.launch { prefsRepo.toggleFavorite(sound) }
     }
 
@@ -437,12 +423,21 @@ class SessionViewModel(
             runCatching { MaskingSoundId.valueOf(it) }.getOrNull()
         } ?: _state.value.sound
         val runtime = when {
-            player.playbackState == Player.STATE_BUFFERING -> SessionRuntimeState.RECOVERING
+            player.playbackState == Player.STATE_BUFFERING && _state.value.audible ->
+                SessionRuntimeState.FADING
+            player.playbackState == Player.STATE_BUFFERING -> SessionRuntimeState.STARTING
             player.playbackSuppressionReason ==
                 Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS ->
                 SessionRuntimeState.FOCUS_DELAYED
             player.playerError != null -> SessionRuntimeState.ERROR
-            player.playWhenReady && !_state.value.limitedMode -> SessionRuntimeState.CAPTURING
+            player.isPlaying && systemMediaVolumePercent() == 0 ->
+                SessionRuntimeState.MUTED_BY_DEVICE
+            player.isPlaying && !_state.value.limitedMode -> SessionRuntimeState.CAPTURING
+            player.isPlaying -> SessionRuntimeState.AUDIBLE
+            player.playWhenReady -> SessionRuntimeState.STARTING
+            _state.value.runtimeState == SessionRuntimeState.TIMER_ENDED ->
+                SessionRuntimeState.TIMER_ENDED
+            _state.value.limitedMode -> SessionRuntimeState.PERMISSION_REQUIRED
             else -> SessionRuntimeState.READY
         }
         val adaptiveSwitch = if (
@@ -460,8 +455,10 @@ class SessionViewModel(
         _state.update {
             it.copy(
                 playing = player.playWhenReady,
+                audible = player.isPlaying && systemMediaVolumePercent() > 0,
                 sound = sound,
                 volume = APP_VOLUME,
+                systemMediaVolumePercent = systemMediaVolumePercent(),
                 runtimeState = runtime,
                 adaptiveSwitchTo = adaptiveSwitch,
                 maskIntensity = if (player.playWhenReady) it.maskIntensity else null,
@@ -494,8 +491,15 @@ class SessionViewModel(
             else -> 0L
         }.coerceAtLeast(0L)
         _state.update {
-            it.copy(timerRemainingSec = remainingMs.takeIf { value -> value > 0L }
-                ?.let { value -> ((value + 999L) / 1_000L).toInt() })
+            it.copy(
+                timerRemainingSec = remainingMs.takeIf { value -> value > 0L }
+                    ?.let { value -> ((value + 999L) / 1_000L).toInt() },
+                runtimeState = if (args.getBoolean(MaskingPlaybackService.ARG_TIMER_COMPLETED)) {
+                    SessionRuntimeState.TIMER_ENDED
+                } else {
+                    it.runtimeState
+                },
+            )
         }
     }
 
@@ -523,15 +527,44 @@ class SessionViewModel(
             audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maximum > 0.7f
     }
 
+    private fun systemMediaVolumePercent(): Int {
+        val maximum = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: return 0
+        if (maximum <= 0) return 0
+        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        return ((current * 100f) / maximum).toInt().coerceIn(0, 100)
+    }
+
+    private fun updateMediaVolumeState() {
+        val percent = systemMediaVolumePercent()
+        _state.update {
+            val runtime = when {
+                it.playing && percent == 0 -> SessionRuntimeState.MUTED_BY_DEVICE
+                it.runtimeState == SessionRuntimeState.MUTED_BY_DEVICE && !it.limitedMode ->
+                    SessionRuntimeState.CAPTURING
+                it.runtimeState == SessionRuntimeState.MUTED_BY_DEVICE ->
+                    SessionRuntimeState.AUDIBLE
+                else -> it.runtimeState
+            }
+            it.copy(
+                systemMediaVolumePercent = percent,
+                audible = it.playing && percent > 0 &&
+                    runtime != SessionRuntimeState.STARTING &&
+                    runtime != SessionRuntimeState.FOCUS_DELAYED &&
+                    runtime != SessionRuntimeState.RECOVERING,
+                runtimeState = runtime,
+            )
+        }
+    }
+
     private fun applyPreferencesToController(prefs: UserPreferences) {
         controller?.apply {
             setMediaItem(NativeMaskingPlayer.mediaItemFor(prefs.lastSound))
             volume = APP_VOLUME
         }
         sendAdaptiveParams(
-            enabled = prefs.adaptiveModeEnabled,
-            switching = prefs.adaptiveSwitching,
-            fade = prefs.adaptiveFade,
+            enabled = true,
+            switching = prefs.maskingPreset.switching,
+            fade = prefs.maskingPreset.fade,
         )
         applyAudioRouting(prefs)
     }
