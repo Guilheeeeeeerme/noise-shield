@@ -102,6 +102,8 @@ class SessionViewModel(
     private var uiForeground = false
     private var safetyMonitorJob: Job? = null
     private var volumePersistenceJob: Job? = null
+    /** Keeps delayed MediaController callbacks from snapping the slider backward. */
+    private var requestedVolume: Float? = null
     private var timerDeadlineElapsedRealtime: Long? = null
     private var lastAppliedInputDeviceId: Int? = null
     private var lastAppliedOutputDeviceId: Int? = null
@@ -307,8 +309,9 @@ class SessionViewModel(
 
     fun setVolume(volume: Float) {
         val clamped = volume.coerceIn(0f, 1f)
-        controller?.volume = clamped
+        requestedVolume = clamped
         _state.update { it.copy(volume = clamped) }
+        controller?.volume = clamped
         volumePersistenceJob?.cancel()
         volumePersistenceJob = viewModelScope.launch {
             delay(250L)
@@ -433,6 +436,17 @@ class SessionViewModel(
     }
 
     private fun syncPlayer(player: Player) {
+        val pendingVolume = requestedVolume
+        val displayedVolume = if (pendingVolume != null) {
+            if (kotlin.math.abs(player.volume - pendingVolume) < 0.001f) {
+                requestedVolume = null
+                player.volume
+            } else {
+                pendingVolume
+            }
+        } else {
+            player.volume
+        }
         val previousSound = _state.value.sound
         val sound = player.currentMediaItem?.mediaId?.let {
             runCatching { MaskingSoundId.valueOf(it) }.getOrNull()
@@ -472,7 +486,7 @@ class SessionViewModel(
                 playing = player.playWhenReady,
                 audible = player.isPlaying && systemMediaVolumePercent() > 0,
                 sound = sound,
-                volume = player.volume,
+                volume = displayedVolume,
                 systemMediaVolumePercent = systemMediaVolumePercent(),
                 runtimeState = runtime,
                 adaptiveSwitchTo = adaptiveSwitch,
