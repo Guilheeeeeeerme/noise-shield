@@ -39,6 +39,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -61,8 +62,6 @@ fun SessionScreen(
     onTimer: (Int?) -> Unit,
     onToggleFavorite: (MaskingSoundId) -> Unit,
     onSettings: () -> Unit,
-    onFeedback: (Boolean) -> Unit,
-    onDismissFeedback: () -> Unit,
     onRequestMic: () -> Unit,
     onAdaptiveMode: (Boolean) -> Unit,
     onInputDevice: (String) -> Unit,
@@ -70,6 +69,7 @@ fun SessionScreen(
     onDismissSafetyWarning: () -> Unit,
     onDismissBreakReminder: () -> Unit,
 ) {
+    val sessionLocked = state.playing
     Scaffold(
         topBar = {
             TopAppBar(
@@ -208,7 +208,9 @@ fun SessionScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha(if (sessionLocked) 0.45f else 1f),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
@@ -222,6 +224,7 @@ fun SessionScreen(
                 Switch(
                     checked = state.prefs.adaptiveModeEnabled,
                     onCheckedChange = onAdaptiveMode,
+                    enabled = !sessionLocked,
                 )
             }
 
@@ -267,11 +270,23 @@ fun SessionScreen(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (sessionLocked) {
+                Text(
+                    stringResource(R.string.session_controls_locked_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                )
+            }
             Spacer(Modifier.height(8.dp))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha(if (sessionLocked) 0.45f else 1f),
             ) {
                 MaskingSoundId.entries.sortedByDescending { it in state.favorites }.forEach { sound ->
                     val selected = state.sound == sound
@@ -288,7 +303,7 @@ fun SessionScreen(
                                 },
                                 shape = RoundedCornerShape(20.dp),
                             )
-                            .clickable { onSelectSound(sound) }
+                            .clickable(enabled = !sessionLocked) { onSelectSound(sound) }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -296,6 +311,7 @@ fun SessionScreen(
                         Text(soundLabel(sound))
                         IconButton(
                             onClick = { onToggleFavorite(sound) },
+                            enabled = !sessionLocked,
                             modifier = Modifier.size(32.dp),
                         ) {
                             Icon(
@@ -320,6 +336,7 @@ fun SessionScreen(
                 outputDevices = state.outputDevices,
                 selectedInputFingerprint = state.selectedInputFingerprint,
                 selectedOutputFingerprint = state.selectedOutputFingerprint,
+                enabled = !sessionLocked,
                 onInputDevice = onInputDevice,
                 onOutputDevice = onOutputDevice,
             )
@@ -327,23 +344,6 @@ fun SessionScreen(
         }
     }
 
-    if (state.showFeedback) {
-        AlertDialog(
-            onDismissRequest = onDismissFeedback,
-            title = { Text(stringResource(R.string.feedback_title)) },
-            text = { Text(stringResource(R.string.feedback_body)) },
-            confirmButton = {
-                TextButton(onClick = { onFeedback(true) }) {
-                    Text(stringResource(R.string.feedback_yes))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { onFeedback(false) }) {
-                    Text(stringResource(R.string.feedback_no))
-                }
-            },
-        )
-    }
     if (state.showSafetyWarning) {
         AlertDialog(
             onDismissRequest = onDismissSafetyWarning,
@@ -457,6 +457,7 @@ private fun AudioRoutePickers(
     outputDevices: List<AudioRouteDevice>,
     selectedInputFingerprint: String,
     selectedOutputFingerprint: String,
+    enabled: Boolean,
     onInputDevice: (String) -> Unit,
     onOutputDevice: (String) -> Unit,
 ) {
@@ -464,7 +465,11 @@ private fun AudioRoutePickers(
     val showOutput = outputDevices.size > 1
     if (!showInput && !showOutput) return
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.45f),
+    ) {
         if (showInput) {
             Text(
                 stringResource(R.string.label_input),
@@ -476,6 +481,7 @@ private fun AudioRoutePickers(
                 devices = inputDevices,
                 selectedFingerprint = selectedInputFingerprint,
                 autoLabel = stringResource(R.string.device_auto_phone_mic),
+                enabled = enabled,
                 onSelect = onInputDevice,
             )
         }
@@ -491,6 +497,7 @@ private fun AudioRoutePickers(
                 devices = outputDevices,
                 selectedFingerprint = selectedOutputFingerprint,
                 autoLabel = stringResource(R.string.device_auto_bt_speaker),
+                enabled = enabled,
                 onSelect = onOutputDevice,
             )
         }
@@ -503,6 +510,7 @@ private fun DeviceChipRow(
     devices: List<AudioRouteDevice>,
     selectedFingerprint: String,
     autoLabel: String,
+    enabled: Boolean,
     onSelect: (String) -> Unit,
 ) {
     val autoSelected = selectedFingerprint == AudioDevicePreference.FINGERPRINT_AUTO
@@ -522,12 +530,14 @@ private fun DeviceChipRow(
         FilterChip(
             selected = autoSelected || matchedFingerprint == null,
             onClick = { onSelect(AudioDevicePreference.FINGERPRINT_AUTO) },
+            enabled = enabled,
             label = { Text(autoLabel) },
         )
         devices.forEach { device ->
             FilterChip(
                 selected = matchedFingerprint == device.fingerprint,
                 onClick = { onSelect(device.fingerprint) },
+                enabled = enabled,
                 label = { Text(device.name) },
             )
         }

@@ -48,6 +48,7 @@
     <string name="label_volume">Volume</string>
     <string name="label_timer">Timer</string>
     <string name="label_sounds">Sounds</string>
+    <string name="session_controls_locked_hint">Pause to change sound, devices, or adaptive mode.</string>
     <string name="label_adaptive_mode">Adaptive mode</string>
     <string name="adaptive_mode_description">Follows room level (quieter when quiet) and switches mask only when a better match stays stable.</string>
     <string name="placement_tip">Point the speaker at the noise source; keep the mic where you want it quieter. Pick input and output separately if Bluetooth couples both.</string>

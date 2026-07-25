@@ -48,6 +48,7 @@
     <string name="label_volume">Volume</string>
     <string name="label_timer">Temporizador</string>
     <string name="label_sounds">Sons</string>
+    <string name="session_controls_locked_hint">Pause para mudar som, dispositivos ou modo adaptativo.</string>
     <string name="label_adaptive_mode">Modo adaptativo</string>
     <string name="adaptive_mode_description">Acompanha o nível do ambiente (mais baixo quando quieto) e troca a máscara só quando um ajuste melhor permanece estável.</string>
     <string name="placement_tip">Aponte o alto-falante para a fonte do ruído; mantenha o microfone onde você quer mais silêncio. Escolha entrada e saída separadamente se o Bluetooth acoplar os dois.</string>

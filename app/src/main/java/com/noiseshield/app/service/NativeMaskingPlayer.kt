@@ -234,11 +234,15 @@ class NativeMaskingPlayer(
     }
 
     fun setPreferredDevices(inputDeviceId: Int, outputDeviceId: Int) {
-        preferredInputDeviceId = inputDeviceId.coerceAtLeast(0)
-        preferredOutputDeviceId = outputDeviceId.coerceAtLeast(0)
+        val nextInput = inputDeviceId.coerceAtLeast(0)
+        val nextOutput = outputDeviceId.coerceAtLeast(0)
+        val inputChanged = nextInput != preferredInputDeviceId
+        val outputChanged = nextOutput != preferredOutputDeviceId
+        preferredInputDeviceId = nextInput
+        preferredOutputDeviceId = nextOutput
         if (!initialized) return
-        engine.setInputDeviceId(preferredInputDeviceId)
-        engine.setOutputDeviceId(preferredOutputDeviceId)
+        if (inputChanged) engine.setInputDeviceId(preferredInputDeviceId)
+        if (outputChanged) engine.setOutputDeviceId(preferredOutputDeviceId)
     }
 
     fun xRunCount(): Int = engine.xRunCount()

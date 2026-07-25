@@ -130,8 +130,6 @@ private fun AppRoot(
                 onTimer = viewModel::setTimerMinutes,
                 onToggleFavorite = viewModel::toggleFavorite,
                 onSettings = { navController.navigate("settings") },
-                onFeedback = viewModel::submitFeedback,
-                onDismissFeedback = viewModel::dismissFeedback,
                 onRequestMic = onRequestMic,
                 onAdaptiveMode = viewModel::setAdaptiveMode,
                 onInputDevice = viewModel::setInputDevice,

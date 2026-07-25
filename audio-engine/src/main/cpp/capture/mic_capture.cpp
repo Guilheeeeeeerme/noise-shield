@@ -55,7 +55,8 @@ bool MicCapture::openStreamLocked() {
 }
 
 void MicCapture::setPreferredDeviceId(int32_t deviceId) {
-    preferredDeviceId_.store(std::max(0, deviceId), std::memory_order_release);
+    const int32_t next = std::max(0, deviceId);
+    if (preferredDeviceId_.exchange(next, std::memory_order_acq_rel) == next) return;
     if (!desiredRunning_.load()) return;
     restartRequested_.store(true, std::memory_order_release);
     restartCondition_.notify_one();

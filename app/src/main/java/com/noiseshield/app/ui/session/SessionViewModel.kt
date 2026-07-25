@@ -75,7 +75,6 @@ data class SessionUiState(
     val selectedInputFingerprint: String = AudioDevicePreference.FINGERPRINT_AUTO,
     val selectedOutputFingerprint: String = AudioDevicePreference.FINGERPRINT_AUTO,
     val favorites: Set<MaskingSoundId> = emptySet(),
-    val showFeedback: Boolean = false,
     val showSafetyWarning: Boolean = false,
     val showBreakReminder: Boolean = false,
     val runtimeState: SessionRuntimeState = SessionRuntimeState.INITIALIZING,
@@ -96,6 +95,8 @@ class SessionViewModel(
     private var volumePersistenceJob: Job? = null
     private var safetyMonitorJob: Job? = null
     private var timerDeadlineElapsedRealtime: Long? = null
+    private var lastAppliedInputDeviceId: Int? = null
+    private var lastAppliedOutputDeviceId: Int? = null
     private val audioManager = appContext.getSystemService(AudioManager::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val deviceCallback = object : AudioDeviceCallback() {
@@ -159,7 +160,6 @@ class SessionViewModel(
                         selectedOutputFingerprint = prefs.preferredOutput.fingerprint,
                     )
                 }
-                applyAudioRouting(prefs)
                 if (controller != null && !_state.value.playing) applyPreferencesToController(prefs)
             }
         }
@@ -228,7 +228,7 @@ class SessionViewModel(
     }
 
     fun togglePlay() {
-        if (_state.value.playing) stopSession(showFeedback = true) else startSession()
+        if (_state.value.playing) stopSession() else startSession()
     }
 
     fun startSession() {
@@ -243,7 +243,7 @@ class SessionViewModel(
         mediaController.volume = current.volume
         mediaController.prepare()
         mediaController.play()
-        _state.update { it.copy(playing = true, showFeedback = false) }
+        _state.update { it.copy(playing = true) }
         if (!current.prefs.safetyWarningAcknowledged &&
             (current.volume > 0.7f || isSystemMediaVolumeHigh())
         ) {
@@ -269,7 +269,7 @@ class SessionViewModel(
         }
     }
 
-    fun stopSession(showFeedback: Boolean = false) {
+    fun stopSession() {
         controller?.pause()
         safetyMonitorJob?.cancel()
         _state.update {
@@ -279,12 +279,12 @@ class SessionViewModel(
                 maskIntensity = null,
                 coverState = null,
                 adaptiveSwitchTo = null,
-                showFeedback = showFeedback,
             )
         }
     }
 
     fun selectSound(sound: MaskingSoundId) {
+        if (_state.value.playing) return
         _state.update { it.copy(sound = sound) }
         controller?.setMediaItem(NativeMaskingPlayer.mediaItemFor(sound))
         viewModelScope.launch { prefsRepo.setLastSound(sound) }
@@ -323,15 +323,10 @@ class SessionViewModel(
     }
 
     fun toggleFavorite(sound: MaskingSoundId) {
+        if (_state.value.playing) return
         viewModelScope.launch { prefsRepo.toggleFavorite(sound) }
     }
 
-    fun submitFeedback(helped: Boolean) {
-        viewModelScope.launch { prefsRepo.recordFeedback(_state.value.sound, helped) }
-        _state.update { it.copy(showFeedback = false) }
-    }
-
-    fun dismissFeedback() = _state.update { it.copy(showFeedback = false) }
     fun setTheme(mode: AppThemeMode) {
         viewModelScope.launch { prefsRepo.setThemeMode(mode) }
     }
@@ -341,11 +336,13 @@ class SessionViewModel(
     }
 
     fun setAdaptiveMode(enabled: Boolean) {
+        if (_state.value.playing) return
         sendBooleanCommand(MaskingPlaybackService.COMMAND_SET_ADAPTIVE_MODE, enabled)
         viewModelScope.launch { prefsRepo.setAdaptiveModeEnabled(enabled) }
     }
 
     fun setInputDevice(fingerprint: String) {
+        if (_state.value.playing) return
         val normalized = fingerprint.ifBlank { AudioDevicePreference.FINGERPRINT_AUTO }
         _state.update { it.copy(selectedInputFingerprint = normalized) }
         val prefs = _state.value.prefs.copy(
@@ -357,6 +354,7 @@ class SessionViewModel(
     }
 
     fun setOutputDevice(fingerprint: String) {
+        if (_state.value.playing) return
         val normalized = fingerprint.ifBlank { AudioDevicePreference.FINGERPRINT_AUTO }
         _state.update { it.copy(selectedOutputFingerprint = normalized) }
         val prefs = _state.value.prefs.copy(
@@ -516,8 +514,6 @@ class SessionViewModel(
                 selectedOutputFingerprint = prefs.preferredOutput.fingerprint,
             )
         }
-        // If a saved device disappeared, keep UI honest by falling back to Auto selection highlight
-        // only when resolve cannot match — preference stays until user changes it.
         val inputId = AudioDeviceCatalog.resolveDeviceId(
             available = inputs,
             preference = prefs.preferredInput,
@@ -530,6 +526,11 @@ class SessionViewModel(
             preferBuiltinWhenAuto = false,
             preferBluetoothWhenAuto = true,
         )
+        if (inputId == lastAppliedInputDeviceId && outputId == lastAppliedOutputDeviceId) {
+            return
+        }
+        lastAppliedInputDeviceId = inputId
+        lastAppliedOutputDeviceId = outputId
         val mediaController = controller ?: return
         val args = Bundle().apply {
             putInt(MaskingPlaybackService.ARG_INPUT_DEVICE_ID, inputId)
