@@ -126,6 +126,7 @@ private fun AppRoot(
                     viewModel.togglePlay()
                 },
                 onSelectSound = viewModel::selectSound,
+                onVolume = viewModel::setVolume,
                 onTimer = viewModel::setTimerMinutes,
                 onToggleFavorite = viewModel::toggleFavorite,
                 onSettings = { navController.navigate("settings") },

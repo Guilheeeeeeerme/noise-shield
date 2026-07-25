@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -61,6 +62,7 @@ fun SessionScreen(
     state: SessionUiState,
     onTogglePlay: () -> Unit,
     onSelectSound: (MaskingSoundId) -> Unit,
+    onVolume: (Float) -> Unit,
     onTimer: (Int?) -> Unit,
     onToggleFavorite: (MaskingSoundId) -> Unit,
     onSettings: () -> Unit,
@@ -177,6 +179,28 @@ fun SessionScreen(
             }
 
             Spacer(Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(R.string.label_volume),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    stringResource(R.string.volume_percent, (state.volume * 100f).toInt()),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Slider(
+                value = state.volume,
+                onValueChange = onVolume,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(12.dp))
             Text(
                 stringResource(R.string.label_sounds),
                 style = MaterialTheme.typography.titleMedium,
@@ -225,7 +249,6 @@ fun SessionScreen(
                     }
                 }
             }
-
             state.adaptiveSwitchTo?.let { adaptiveSwitchTo ->
                 Spacer(Modifier.height(8.dp))
                 Text(
@@ -291,6 +314,14 @@ fun SessionScreen(
                     )
                 }
             }
+            Text(
+                maskingPresetDescription(state.prefs.maskingPreset),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+            )
             if (state.limitedMode) {
                 TextButton(onClick = onRequestMic) {
                     Text(stringResource(R.string.action_grant_mic))
@@ -582,10 +613,21 @@ private fun dbfsToMeterFill(relativeDbfs: Float): Float {
 private fun maskingPresetLabel(preset: MaskingPreset): String = stringResource(
     when (preset) {
         MaskingPreset.NORMAL -> R.string.mode_normal
-        MaskingPreset.QUIET -> R.string.mode_quiet
-        MaskingPreset.HOME -> R.string.mode_home
-        MaskingPreset.BUSY -> R.string.mode_busy
+        MaskingPreset.SLEEP -> R.string.mode_sleep
+        MaskingPreset.FOCUS -> R.string.mode_focus
+        MaskingPreset.OFFICE -> R.string.mode_office
         MaskingPreset.TRAVEL -> R.string.mode_travel
+    },
+)
+
+@Composable
+private fun maskingPresetDescription(preset: MaskingPreset): String = stringResource(
+    when (preset) {
+        MaskingPreset.NORMAL -> R.string.mode_normal_description
+        MaskingPreset.SLEEP -> R.string.mode_sleep_description
+        MaskingPreset.FOCUS -> R.string.mode_focus_description
+        MaskingPreset.OFFICE -> R.string.mode_office_description
+        MaskingPreset.TRAVEL -> R.string.mode_travel_description
     },
 )
 

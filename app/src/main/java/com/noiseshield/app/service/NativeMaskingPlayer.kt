@@ -79,9 +79,9 @@ class NativeMaskingPlayer(
 
     val estimate get() = engine.estimate
     val currentSound get() = selectedSound
-    /** Fraction of user volume currently applied after ambient + focus + intro. */
+    /** Actual app gain after focus ducking and intro fade. */
     val maskIntensity: Float
-        get() = (ambientScale * focusDuck * introScale).coerceIn(0f, 1f)
+        get() = (volume * focusDuck * introScale).coerceIn(0f, 1f)
 
     init {
         recoveryObserver = scope.launch {
@@ -321,7 +321,7 @@ class NativeMaskingPlayer(
 
     private fun applyEffectiveVolume() {
         if (!initialized) return
-        val effective = (volume * ambientScale * focusDuck * introScale).coerceIn(0f, 1f)
+        val effective = (volume * focusDuck * introScale).coerceIn(0f, 1f)
         engine.setVolume(effective)
     }
 

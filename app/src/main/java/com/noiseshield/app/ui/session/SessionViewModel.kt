@@ -69,8 +69,7 @@ data class SessionUiState(
     val audible: Boolean = false,
     val systemMediaVolumePercent: Int = 0,
     val sound: MaskingSoundId = MaskingSoundId.WHITE_NOISE,
-    /** App gain is always full; device media volume is the only level control. */
-    val volume: Float = 1.0f,
+    val volume: Float = 0.5f,
     val timerRemainingSec: Int? = null,
     val limitedMode: Boolean = true,
     val estimate: NoiseAnalysis? = null,
@@ -102,6 +101,7 @@ class SessionViewModel(
     private var pendingStart = false
     private var uiForeground = false
     private var safetyMonitorJob: Job? = null
+    private var volumePersistenceJob: Job? = null
     private var timerDeadlineElapsedRealtime: Long? = null
     private var lastAppliedInputDeviceId: Int? = null
     private var lastAppliedOutputDeviceId: Int? = null
@@ -163,7 +163,7 @@ class SessionViewModel(
                         prefs = prefs,
                         favorites = prefs.favorites,
                         sound = if (!it.playing) prefs.lastSound else it.sound,
-                        volume = APP_VOLUME,
+                        volume = if (!it.playing) prefs.lastVolume else it.volume,
                         selectedInputFingerprint = prefs.preferredInput.fingerprint,
                         selectedOutputFingerprint = prefs.preferredOutput.fingerprint,
                     )
@@ -248,18 +248,20 @@ class SessionViewModel(
         }
         val current = _state.value
         mediaController.setMediaItem(NativeMaskingPlayer.mediaItemFor(current.sound))
-        mediaController.volume = APP_VOLUME
+        mediaController.volume = current.volume
         mediaController.prepare()
         mediaController.play()
         _state.update {
             it.copy(
                 playing = true,
-                volume = APP_VOLUME,
+                volume = current.volume,
                 runtimeState = SessionRuntimeState.STARTING,
                 systemMediaVolumePercent = systemMediaVolumePercent(),
             )
         }
-        if (!current.prefs.safetyWarningAcknowledged && isSystemMediaVolumeHigh()) {
+        if (!current.prefs.safetyWarningAcknowledged &&
+            (current.volume > 0.7f || isSystemMediaVolumeHigh())
+        ) {
             _state.update { it.copy(showSafetyWarning = true) }
         }
         safetyMonitorJob?.cancel()
@@ -269,7 +271,9 @@ class SessionViewModel(
                 val latest = _state.value
                 if (!latest.playing) break
                 updateMediaVolumeState()
-                if (!latest.prefs.safetyWarningAcknowledged && isSystemMediaVolumeHigh()) {
+                if (!latest.prefs.safetyWarningAcknowledged &&
+                    (latest.volume > 0.7f || isSystemMediaVolumeHigh())
+                ) {
                     _state.update { it.copy(showSafetyWarning = true) }
                 }
             }
@@ -277,7 +281,7 @@ class SessionViewModel(
         setUiForeground(uiForeground)
         viewModelScope.launch {
             prefsRepo.setLastSound(current.sound)
-            prefsRepo.setLastVolume(APP_VOLUME)
+            prefsRepo.setLastVolume(current.volume)
         }
     }
 
@@ -299,6 +303,17 @@ class SessionViewModel(
         _state.update { it.copy(sound = sound) }
         controller?.setMediaItem(NativeMaskingPlayer.mediaItemFor(sound))
         viewModelScope.launch { prefsRepo.setLastSound(sound) }
+    }
+
+    fun setVolume(volume: Float) {
+        val clamped = volume.coerceIn(0f, 1f)
+        controller?.volume = clamped
+        _state.update { it.copy(volume = clamped) }
+        volumePersistenceJob?.cancel()
+        volumePersistenceJob = viewModelScope.launch {
+            delay(250L)
+            prefsRepo.setLastVolume(clamped)
+        }
     }
 
     fun setMaskingPreset(preset: MaskingPreset) {
@@ -457,7 +472,7 @@ class SessionViewModel(
                 playing = player.playWhenReady,
                 audible = player.isPlaying && systemMediaVolumePercent() > 0,
                 sound = sound,
-                volume = APP_VOLUME,
+                volume = player.volume,
                 systemMediaVolumePercent = systemMediaVolumePercent(),
                 runtimeState = runtime,
                 adaptiveSwitchTo = adaptiveSwitch,
@@ -559,7 +574,7 @@ class SessionViewModel(
     private fun applyPreferencesToController(prefs: UserPreferences) {
         controller?.apply {
             setMediaItem(NativeMaskingPlayer.mediaItemFor(prefs.lastSound))
-            volume = APP_VOLUME
+            volume = prefs.lastVolume
         }
         sendAdaptiveParams(
             enabled = true,
@@ -621,8 +636,6 @@ class SessionViewModel(
     }
 
     companion object {
-        private const val APP_VOLUME = 1.0f
-
         fun factory(app: NoiseShieldApp): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")

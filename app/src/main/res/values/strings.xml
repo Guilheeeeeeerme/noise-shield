@@ -55,6 +55,7 @@
     <string name="state_error">Audio unavailable</string>
     <string name="error_audio_initialization">Could not initialize the audio engine.</string>
     <string name="label_volume">Volume</string>
+    <string name="volume_percent">%1$d%%</string>
     <string name="label_timer">Timer</string>
     <string name="label_sounds">Sounds</string>
     <string name="session_controls_locked_hint">Pause to change sound or devices.</string>
@@ -70,10 +71,15 @@
     <string name="masking_mode_description">Choose what best matches your surroundings. You can switch at any time.</string>
     <string name="masking_mode_manual_description">Choose a preset now; microphone access enables automatic room updates.</string>
     <string name="mode_normal">Normal</string>
-    <string name="mode_quiet">Quiet</string>
-    <string name="mode_home">Home</string>
-    <string name="mode_busy">Busy</string>
+    <string name="mode_sleep">Sleep</string>
+    <string name="mode_focus">Deep focus</string>
+    <string name="mode_office">Office &amp; speech</string>
     <string name="mode_travel">Travel</string>
+    <string name="mode_normal_description">Balanced switching and 2-second fades — the original Noise Shield behavior.</string>
+    <string name="mode_sleep_description">Very stable with slow, gentle fades for steady nighttime noise.</string>
+    <string name="mode_focus_description">Selective, smooth changes that avoid interrupting concentrated work.</string>
+    <string name="mode_office_description">Responds quickly to conversations and changing workplace activity.</string>
+    <string name="mode_travel_description">Fastest response for traffic, transit, crowds, and rapidly changing noise.</string>
     <string name="label_switching">Switching</string>
     <string name="switching_selective">Selective</string>
     <string name="switching_eager">Eager</string>

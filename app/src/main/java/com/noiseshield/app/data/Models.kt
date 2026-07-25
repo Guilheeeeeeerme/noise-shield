@@ -35,9 +35,9 @@ enum class CoverState {
 
 enum class MaskingPreset(val switching: Float, val fade: Float) {
     NORMAL(0.5f, 0.5f),
-    QUIET(0.15f, 0.15f),
-    HOME(0.35f, 0.35f),
-    BUSY(0.75f, 0.7f),
+    SLEEP(0.1f, 0f),
+    FOCUS(0.3f, 0.25f),
+    OFFICE(0.75f, 0.65f),
     TRAVEL(1f, 0.9f),
 }
 

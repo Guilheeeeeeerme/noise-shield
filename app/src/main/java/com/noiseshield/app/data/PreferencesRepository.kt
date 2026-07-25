@@ -18,8 +18,7 @@ data class UserPreferences(
     val onboardingDone: Boolean = false,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val lastSound: MaskingSoundId = MaskingSoundId.WHITE_NOISE,
-    /** Unused for UI; app gain is always 1.0 (device volume only). Kept for migration. */
-    val lastVolume: Float = 1.0f,
+    val lastVolume: Float = 0.5f,
     val favorites: Set<MaskingSoundId> = emptySet(),
     val maskingPreset: MaskingPreset = MaskingPreset.NORMAL,
     val safetyWarningAcknowledged: Boolean = false,
@@ -58,7 +57,7 @@ class PreferencesRepository(private val context: Context) {
             lastSound = runCatching {
                 MaskingSoundId.valueOf(prefs[Keys.lastSound] ?: MaskingSoundId.WHITE_NOISE.name)
             }.getOrDefault(MaskingSoundId.WHITE_NOISE),
-            lastVolume = 1.0f,
+            lastVolume = (prefs[Keys.lastVolume] ?: 0.5f).coerceIn(0f, 1f),
             favorites = (prefs[Keys.favorites] ?: emptySet()).mapNotNull {
                 runCatching { MaskingSoundId.valueOf(it) }.getOrNull()
             }.toSet(),
@@ -66,7 +65,14 @@ class PreferencesRepository(private val context: Context) {
                 MaskingPreset.valueOf(
                     prefs[Keys.maskingPreset] ?: MaskingPreset.NORMAL.name,
                 )
-            }.getOrDefault(MaskingPreset.NORMAL),
+            }.getOrElse {
+                when (prefs[Keys.maskingPreset]) {
+                    "QUIET" -> MaskingPreset.SLEEP
+                    "HOME" -> MaskingPreset.FOCUS
+                    "BUSY" -> MaskingPreset.OFFICE
+                    else -> MaskingPreset.NORMAL
+                }
+            },
             safetyWarningAcknowledged = prefs[Keys.safetyWarningAcknowledged] ?: false,
             feedbackCounters = decodeFeedbackCounters(prefs[Keys.feedbackCounters].orEmpty()),
             preferredInput = AudioDevicePreference(
