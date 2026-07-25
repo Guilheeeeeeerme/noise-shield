@@ -49,20 +49,35 @@ class NativeMaskingPlayer(
     private var selectedSound = MaskingSoundId.WHITE_NOISE
     private var volume = 0.3f
     /** Ambient-linked intensity under the user volume ceiling (1 = full slider). */
-    private var ambientScale = 1f
+    private var ambientScale = AMBIENT_SCALE_MIN
     /** Audio-focus duck multiplier (1 = unducked). */
     private var focusDuck = 1f
+    /** Soft-start multiplier: 0 at Play, holds silence, then ramps to 1. */
+    private var introScale = 0f
     private var preferredInputDeviceId = 0
     private var preferredOutputDeviceId = 0
     private var focusRequest: AudioFocusRequest? = null
     private var recoveryObserver: Job? = null
     private var decodeJob: Job? = null
+    private val introHoldThenRamp = Runnable { beginIntroRamp() }
+    private val introRampTick = object : Runnable {
+        override fun run() {
+            if (!playWhenReady) return
+            val elapsed = System.currentTimeMillis() - introRampStartedAtMs
+            introScale = (elapsed.toFloat() / INTRO_RAMP_MS).coerceIn(0f, 1f)
+            applyEffectiveVolume()
+            if (introScale < 1f) {
+                handler.postDelayed(this, INTRO_TICK_MS)
+            }
+        }
+    }
+    private var introRampStartedAtMs = 0L
 
     val estimate get() = engine.estimate
     val currentSound get() = selectedSound
-    /** Fraction of user volume currently applied after ambient + focus. */
+    /** Fraction of user volume currently applied after ambient + focus + intro. */
     val maskIntensity: Float
-        get() = (ambientScale * focusDuck).coerceIn(0f, 1f)
+        get() = (ambientScale * focusDuck * introScale).coerceIn(0f, 1f)
 
     init {
         recoveryObserver = scope.launch {
@@ -131,17 +146,20 @@ class NativeMaskingPlayer(
                     focusSuppressed = false
                     resumeAfterTransientLoss = false
                     this.playWhenReady = true
+                    startSoftIntro()
                     engine.setPlaying(true)
                 }
                 AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> {
                     focusSuppressed = true
                     resumeAfterTransientLoss = true
                     this.playWhenReady = true
+                    startSoftIntro()
                     engine.setPlaying(false)
                 }
                 else -> {
                     focusSuppressed = false
                     this.playWhenReady = false
+                    cancelSoftIntro()
                     engine.setPlaying(false)
                     handler.postDelayed(releaseEngine, ENGINE_RELEASE_DELAY_MS)
                 }
@@ -151,6 +169,7 @@ class NativeMaskingPlayer(
             focusSuppressed = false
             resumeAfterTransientLoss = false
             focusDuck = 1f
+            cancelSoftIntro()
             engine.setPlaying(false)
             abandonAudioFocus()
             handler.postDelayed(releaseEngine, ENGINE_RELEASE_DELAY_MS)
@@ -163,6 +182,7 @@ class NativeMaskingPlayer(
         playWhenReady = false
         playWhenReadyChangeReason = Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST
         focusDuck = 1f
+        cancelSoftIntro()
         engine.setPlaying(false)
         engine.stopCapture()
         resetAmbientScale()
@@ -198,7 +218,7 @@ class NativeMaskingPlayer(
     }
 
     fun resetAmbientScale() {
-        ambientScale = 1f
+        ambientScale = AMBIENT_SCALE_MIN
         applyEffectiveVolume()
     }
 
@@ -254,7 +274,10 @@ class NativeMaskingPlayer(
                     focusSuppressed = false
                     focusDuck = 1f
                     applyEffectiveVolume()
-                    if (playWhenReady && resumeAfterTransientLoss) engine.setPlaying(true)
+                    if (playWhenReady && resumeAfterTransientLoss) {
+                        startSoftIntro()
+                        engine.setPlaying(true)
+                    }
                     resumeAfterTransientLoss = false
                 }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
@@ -274,6 +297,7 @@ class NativeMaskingPlayer(
                     playWhenReady = false
                     playWhenReadyChangeReason =
                         Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS
+                    cancelSoftIntro()
                     engine.setPlaying(false)
                     abandonAudioFocus()
                     handler.postDelayed(releaseEngine, ENGINE_RELEASE_DELAY_MS)
@@ -285,8 +309,29 @@ class NativeMaskingPlayer(
 
     private fun applyEffectiveVolume() {
         if (!initialized) return
-        val effective = (volume * ambientScale * focusDuck).coerceIn(0f, 1f)
+        val effective = (volume * ambientScale * focusDuck * introScale).coerceIn(0f, 1f)
         engine.setVolume(effective)
+    }
+
+    private fun startSoftIntro() {
+        handler.removeCallbacks(introHoldThenRamp)
+        handler.removeCallbacks(introRampTick)
+        introScale = 0f
+        applyEffectiveVolume()
+        handler.postDelayed(introHoldThenRamp, INTRO_HOLD_MS)
+    }
+
+    private fun beginIntroRamp() {
+        if (!playWhenReady) return
+        introRampStartedAtMs = System.currentTimeMillis()
+        handler.post(introRampTick)
+    }
+
+    private fun cancelSoftIntro() {
+        handler.removeCallbacks(introHoldThenRamp)
+        handler.removeCallbacks(introRampTick)
+        introScale = 0f
+        applyEffectiveVolume()
     }
 
     fun releaseNative() {
@@ -295,6 +340,8 @@ class NativeMaskingPlayer(
         decodeJob?.cancel()
         decodeJob = null
         handler.removeCallbacks(releaseEngine)
+        handler.removeCallbacks(introHoldThenRamp)
+        handler.removeCallbacks(introRampTick)
         engine.stopCapture()
         engine.release()
         abandonAudioFocus()
@@ -387,6 +434,12 @@ class NativeMaskingPlayer(
     companion object {
         private const val ENGINE_RELEASE_DELAY_MS = 30_000L
         private const val DUCK_FACTOR = 0.2f
+        private const val AMBIENT_SCALE_MIN = 0.05f
+        /** Silence after Play before fade-in begins. */
+        private const val INTRO_HOLD_MS = 2_000L
+        /** Fade-in duration from silence to target. */
+        private const val INTRO_RAMP_MS = 4_000L
+        private const val INTRO_TICK_MS = 50L
 
         fun mediaItemFor(sound: MaskingSoundId): MediaItem =
             MediaItem.Builder()

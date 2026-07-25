@@ -31,7 +31,8 @@ class MaskingPlaybackService : MediaSessionService() {
     private lateinit var session: MediaSession
     private var timerDeadlineElapsedRealtime: Long? = null
     private var timerRemainingWhenPausedMs: Long? = null
-    private var adaptiveModeEnabled = true
+    private var adaptiveSensitivity = 0.5f
+    private var adaptiveDelay = 0.5f
     private var uiForeground = false
     private var latestAnalysis: NoiseAnalysis? = null
     private var manualOverride = false
@@ -42,10 +43,10 @@ class MaskingPlaybackService : MediaSessionService() {
     private var adaptiveCooldownUntil = 0L
     private var breakReminderDeadline = 0L
     private var breakReminderSent = false
-    private var smoothedAmbientScale = 1f
+    private var smoothedAmbientScale = AMBIENT_SCALE_MIN
     private var hasAmbientScale = false
     private var coveredLatched = false
-    private var ambientTargetScale = 1f
+    private var ambientTargetScale = AMBIENT_SCALE_MIN
     private var preferredInputDeviceId = 0
     private var preferredOutputDeviceId = 0
     private val stopPausedService = Runnable {
@@ -192,7 +193,7 @@ class MaskingPlaybackService : MediaSessionService() {
         ): MediaSession.ConnectionResult {
             val commands = SessionCommands.Builder()
                 .add(SessionCommand(COMMAND_SET_TIMER, Bundle.EMPTY))
-                .add(SessionCommand(COMMAND_SET_ADAPTIVE_MODE, Bundle.EMPTY))
+                .add(SessionCommand(COMMAND_SET_ADAPTIVE_PARAMS, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_SET_UI_FOREGROUND, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_SET_AUDIO_DEVICES, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_ANALYSIS_EVENT, Bundle.EMPTY))
@@ -225,8 +226,9 @@ class MaskingPlaybackService : MediaSessionService() {
                     }
                     broadcastTimer()
                 }
-                COMMAND_SET_ADAPTIVE_MODE -> {
-                    adaptiveModeEnabled = args.getBoolean(ARG_ENABLED, true)
+                COMMAND_SET_ADAPTIVE_PARAMS -> {
+                    adaptiveSensitivity = args.getFloat(ARG_SENSITIVITY, 0.5f).coerceIn(0f, 1f)
+                    adaptiveDelay = args.getFloat(ARG_DELAY, 0.5f).coerceIn(0f, 1f)
                 }
                 COMMAND_SET_UI_FOREGROUND -> {
                     uiForeground = args.getBoolean(ARG_ENABLED, false)
@@ -290,7 +292,8 @@ class MaskingPlaybackService : MediaSessionService() {
         }
         ambientTargetScale = target
         if (!hasAmbientScale) {
-            smoothedAmbientScale = target
+            // Stay at min until envelope raises toward the measured target (no snap).
+            smoothedAmbientScale = AMBIENT_SCALE_MIN
             hasAmbientScale = true
             player.setAmbientScale(smoothedAmbientScale)
             handler.removeCallbacks(envelopeTick)
@@ -302,8 +305,8 @@ class MaskingPlaybackService : MediaSessionService() {
     private fun resetAmbientIntensity() {
         handler.removeCallbacks(envelopeTick)
         hasAmbientScale = false
-        smoothedAmbientScale = 1f
-        ambientTargetScale = 1f
+        smoothedAmbientScale = AMBIENT_SCALE_MIN
+        ambientTargetScale = AMBIENT_SCALE_MIN
         coveredLatched = false
         player.resetAmbientScale()
     }
@@ -354,22 +357,52 @@ class MaskingPlaybackService : MediaSessionService() {
             manualBaseline = null
             manualShiftUpdates = 0
         }
+        if (adaptiveSensitivity <= 0f) return
+        val requiredImprovement = scoreImprovementForSensitivity(adaptiveSensitivity)
+        val requiredStable = stableUpdatesForDelay(adaptiveDelay)
+        val cooldownMs = cooldownMsForDelay(adaptiveDelay)
         val now = SystemClock.elapsedRealtime()
         val suggested = analysis.suggestedSoundId
         val improvement = maskingScore(suggested, analysis.melBandEnergies) -
             maskingScore(player.currentSound, analysis.melBandEnergies)
-        if (!adaptiveModeEnabled || analysis.confidence < MIN_CONFIDENCE ||
-            improvement < REQUIRED_SCORE_IMPROVEMENT || suggested == player.currentSound ||
+        if (analysis.confidence < MIN_CONFIDENCE ||
+            improvement < requiredImprovement || suggested == player.currentSound ||
             now < adaptiveCooldownUntil) return
         if (candidateSound == suggested) candidateUpdates++ else {
             candidateSound = suggested
             candidateUpdates = 1
         }
-        if (candidateUpdates < REQUIRED_STABLE_UPDATES) return
+        if (candidateUpdates < requiredStable) return
         player.setSound(suggested)
-        adaptiveCooldownUntil = now + ADAPTIVE_COOLDOWN_MS
+        adaptiveCooldownUntil = now + cooldownMs
         candidateSound = null
         candidateUpdates = 0
+    }
+
+    /** Higher UI sensitivity → lower score-improvement gate. 0→0.20, 0.5→0.10, 1→0.05. */
+    private fun scoreImprovementForSensitivity(sensitivity: Float): Float {
+        val t = sensitivity.coerceIn(0f, 1f)
+        return if (t <= 0.5f) {
+            SCORE_IMPROVEMENT_MAX - (t / 0.5f) * (SCORE_IMPROVEMENT_MAX - SCORE_IMPROVEMENT_MID)
+        } else {
+            SCORE_IMPROVEMENT_MID - ((t - 0.5f) / 0.5f) * (SCORE_IMPROVEMENT_MID - SCORE_IMPROVEMENT_MIN)
+        }
+    }
+
+    /** UI delay: 0 = Stable (patient), 1 = Quick. Maps to high→low stable updates / cooldown. */
+    private fun stableUpdatesForDelay(delay: Float): Int {
+        val patience = 1f - delay.coerceIn(0f, 1f)
+        return (1f + patience * 5f).toInt().coerceIn(STABLE_UPDATES_MIN, STABLE_UPDATES_MAX)
+    }
+
+    /** UI delay: 0 = Stable, 1 = Quick. */
+    private fun cooldownMsForDelay(delay: Float): Long {
+        val patience = 1f - delay.coerceIn(0f, 1f)
+        return if (patience <= 0.5f) {
+            (COOLDOWN_MS_MIN + (patience / 0.5f) * (COOLDOWN_MS_MID - COOLDOWN_MS_MIN)).toLong()
+        } else {
+            (COOLDOWN_MS_MID + ((patience - 0.5f) / 0.5f) * (COOLDOWN_MS_MAX - COOLDOWN_MS_MID)).toLong()
+        }
     }
 
     private fun maskingScore(sound: MaskingSoundId, spectrum: List<Float>): Float {
@@ -397,7 +430,7 @@ class MaskingPlaybackService : MediaSessionService() {
 
     companion object {
         const val COMMAND_SET_TIMER = "com.noiseshield.app.SET_TIMER"
-        const val COMMAND_SET_ADAPTIVE_MODE = "com.noiseshield.app.SET_ADAPTIVE_MODE"
+        const val COMMAND_SET_ADAPTIVE_PARAMS = "com.noiseshield.app.SET_ADAPTIVE_PARAMS"
         const val COMMAND_SET_UI_FOREGROUND = "com.noiseshield.app.SET_UI_FOREGROUND"
         const val COMMAND_SET_AUDIO_DEVICES = "com.noiseshield.app.SET_AUDIO_DEVICES"
         const val COMMAND_ANALYSIS_EVENT = "com.noiseshield.app.ANALYSIS_EVENT"
@@ -406,6 +439,8 @@ class MaskingPlaybackService : MediaSessionService() {
         const val COMMAND_GET_AUDIO_METRICS = "com.noiseshield.app.GET_AUDIO_METRICS"
         const val ARG_DURATION_MS = "duration_ms"
         const val ARG_ENABLED = "enabled"
+        const val ARG_SENSITIVITY = "sensitivity"
+        const val ARG_DELAY = "delay"
         const val ARG_RELATIVE_DBFS = "relative_dbfs"
         const val ARG_LEVEL_BUCKET = "level_bucket"
         const val ARG_SOUND_ID = "sound_id"
@@ -427,9 +462,14 @@ class MaskingPlaybackService : MediaSessionService() {
         private const val PAUSED_SERVICE_STOP_DELAY_MS = 30_000L
         private const val MEL_BANDS = 24
         private const val MIN_CONFIDENCE = 0.03f
-        private const val REQUIRED_SCORE_IMPROVEMENT = 0.10f
-        private const val REQUIRED_STABLE_UPDATES = 3
-        private const val ADAPTIVE_COOLDOWN_MS = 15_000L
+        private const val SCORE_IMPROVEMENT_MIN = 0.05f
+        private const val SCORE_IMPROVEMENT_MID = 0.10f
+        private const val SCORE_IMPROVEMENT_MAX = 0.20f
+        private const val STABLE_UPDATES_MIN = 1
+        private const val STABLE_UPDATES_MAX = 6
+        private const val COOLDOWN_MS_MIN = 5_000L
+        private const val COOLDOWN_MS_MID = 15_000L
+        private const val COOLDOWN_MS_MAX = 45_000L
         private const val MANUAL_OVERRIDE_DISTANCE = 0.25f
         private const val MANUAL_OVERRIDE_UPDATES = 5
         /** 250 ms envelope ticks: ~0.7–1 s attack, ~5–7 s release. */

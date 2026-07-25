@@ -32,7 +32,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -63,7 +62,8 @@ fun SessionScreen(
     onToggleFavorite: (MaskingSoundId) -> Unit,
     onSettings: () -> Unit,
     onRequestMic: () -> Unit,
-    onAdaptiveMode: (Boolean) -> Unit,
+    onAdaptiveSensitivity: (Float) -> Unit,
+    onAdaptiveDelay: (Float) -> Unit,
     onInputDevice: (String) -> Unit,
     onOutputDevice: (String) -> Unit,
     onDismissSafetyWarning: () -> Unit,
@@ -207,25 +207,62 @@ fun SessionScreen(
                 onValueChange = onVolume,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .alpha(if (sessionLocked) 0.45f else 1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.label_adaptive_mode))
+                Text(stringResource(R.string.label_auto_switch))
+                Text(
+                    stringResource(R.string.auto_switch_description),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.label_sensitivity), modifier = Modifier.fillMaxWidth())
+                Slider(
+                    value = state.prefs.adaptiveSensitivity,
+                    onValueChange = onAdaptiveSensitivity,
+                    enabled = !sessionLocked,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
                     Text(
-                        stringResource(R.string.adaptive_mode_description),
-                        style = MaterialTheme.typography.bodySmall,
+                        stringResource(R.string.sensitivity_off),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        stringResource(R.string.sensitivity_eager),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Switch(
-                    checked = state.prefs.adaptiveModeEnabled,
-                    onCheckedChange = onAdaptiveMode,
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.label_delay), modifier = Modifier.fillMaxWidth())
+                Slider(
+                    value = state.prefs.adaptiveDelay,
+                    onValueChange = onAdaptiveDelay,
                     enabled = !sessionLocked,
+                    modifier = Modifier.fillMaxWidth(),
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        stringResource(R.string.delay_stable),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(
+                        stringResource(R.string.delay_quick),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             Spacer(Modifier.height(8.dp))

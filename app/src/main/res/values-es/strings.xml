@@ -41,7 +41,7 @@
     <string name="limited_mode_body">Micrófono denegado — la máscara manual sigue funcionando. Análisis y sugerencia automática desactivados.</string>
     <string name="session_playing">Enmascarando</string>
     <string name="session_ready">Toca para iniciar</string>
-    <string name="session_controls_locked_hint">Pausa para cambiar el sonido, los dispositivos o el modo adaptativo.</string>
+    <string name="session_controls_locked_hint">Pausa para cambiar el sonido, los dispositivos o el cambio automático.</string>
     <string name="state_initializing">Inicializando audio…</string>
     <string name="state_ready">Listo</string>
     <string name="state_permission_required">Se necesita permiso de micrófono para el análisis</string>
@@ -53,8 +53,14 @@
     <string name="label_volume">Volumen</string>
     <string name="label_timer">Temporizador</string>
     <string name="label_sounds">Sonidos</string>
-    <string name="label_adaptive_mode">Modo adaptativo</string>
-    <string name="adaptive_mode_description">Sigue el nivel de la habitación (más bajo cuando hay silencio) y cambia la máscara solo cuando un ajuste mejor se mantiene estable.</string>
+    <string name="label_auto_switch">Cambio automático</string>
+    <string name="auto_switch_description">Elige una máscara mejor cuando la habitación se mantiene distinta. No cambia el tope de tu volumen.</string>
+    <string name="label_sensitivity">Sensibilidad</string>
+    <string name="sensitivity_off">Off</string>
+    <string name="sensitivity_eager">Rápida</string>
+    <string name="label_delay">Retraso</string>
+    <string name="delay_stable">Estable</string>
+    <string name="delay_quick">Ágil</string>
     <string name="placement_tip">Apunta el altavoz hacia la fuente de ruido; mantén el micrófono donde quieras más silencio. Elige entrada y salida por separado si el Bluetooth acopla ambas.</string>
     <string name="cover_listening">Escuchando</string>
     <string name="cover_masking_external">Enmascarando ruido externo</string>

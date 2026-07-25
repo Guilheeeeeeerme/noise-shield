@@ -41,7 +41,7 @@
     <string name="limited_mode_body">Micro refusé — le masquage manuel fonctionne toujours. Analyse et suggestion auto désactivées.</string>
     <string name="session_playing">Masquage</string>
     <string name="session_ready">Appuyez pour démarrer</string>
-    <string name="session_controls_locked_hint">Mettez en pause pour changer le son, les appareils ou le mode adaptatif.</string>
+    <string name="session_controls_locked_hint">Mettez en pause pour changer le son, les appareils ou le basculement auto.</string>
     <string name="state_initializing">Initialisation audio…</string>
     <string name="state_ready">Prêt</string>
     <string name="state_permission_required">Permission micro requise pour l’analyse</string>
@@ -53,8 +53,14 @@
     <string name="label_volume">Volume</string>
     <string name="label_timer">Minuteur</string>
     <string name="label_sounds">Sons</string>
-    <string name="label_adaptive_mode">Mode adaptatif</string>
-    <string name="adaptive_mode_description">Suit le niveau de la pièce (plus bas au calme) et ne change de masque que lorsqu’un meilleur réglage reste stable.</string>
+    <string name="label_auto_switch">Basculement auto</string>
+    <string name="auto_switch_description">Choisit un meilleur masque quand la pièce reste différente. Ne change pas votre plafond de volume.</string>
+    <string name="label_sensitivity">Sensibilité</string>
+    <string name="sensitivity_off">Off</string>
+    <string name="sensitivity_eager">Réactif</string>
+    <string name="label_delay">Délai</string>
+    <string name="delay_stable">Stable</string>
+    <string name="delay_quick">Rapide</string>
     <string name="placement_tip">Orientez le haut-parleur vers la source de bruit ; placez le micro où vous voulez plus de calme. Choisissez entrée et sortie séparément si le Bluetooth couple les deux.</string>
     <string name="cover_listening">Écoute</string>
     <string name="cover_masking_external">Masquage du bruit externe</string>

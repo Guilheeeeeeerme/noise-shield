@@ -12,13 +12,13 @@ Current repository is an incomplete prototype, not a verified MVP.
 | Sounds | Unused placeholder MP3s and crude four-second loops | Procedural colored noise plus seamless Ogg natural loops | Replace |
 | Analysis | Temporal thirds incorrectly treated as frequency bands | FFT/mel spectral matching designed for masking | Replace |
 | ML alternative | None | YAMNet adds unnecessary model and CPU overhead for this use case | Reject |
-| Auto-adaptation | Unstable hard-coded classifications | Smoothed scoring, hysteresis, cooldown, adaptive toggle | Replace |
+| Auto-adaptation | Unstable hard-coded classifications | Smoothed scoring, hysteresis, Sensitivity + Delay sliders | Replace |
 | Background microphone | Capture can outlive the foreground UI | Foreground-UI capture only | Replace |
 | Timer | ViewModel countdown | Service-owned absolute deadline | Replace |
 | Audio focus | Delayed/transient states mishandled | Complete focus state machine | Replace |
 | Persistence | Preferences DataStore | Keep, debounce, validate, and remove duplicate locale state | Keep |
 | UI | Compose and Material 3 | Keep, repair accessibility and localization | Keep |
-| Safety | Linear gain only | Perceptual volume, ramps, warnings, break reminder | Add |
+| Safety | Linear gain only | Perceptual volume, soft-start, ramps, warnings, break reminder | Add |
 | Startup | Native stream opened at application startup | Lazy initialization plus measured Baseline Profile | Replace |
 
 Build verification was blocked because the inspection environment had no JDK or
@@ -34,10 +34,10 @@ Build verification was blocked because the inspection environment had no JDK or
   `SimpleBasePlayer` adapter wraps the native engine and exposes sounds as media
   items whose IDs equal the existing `MaskingSoundId` names.
 - The service owns play/pause, selected sound, effective volume, audio focus,
-  timer deadline, adaptive mode, and engine errors. The ViewModel combines
+  timer deadline, auto-switch sensitivity/delay, and engine errors. The ViewModel combines
   `MediaController` state with preferences.
 - Use standard player commands for playback, sound selection, and volume. Add
-  custom commands for `SET_TIMER`, `SET_ADAPTIVE_MODE`, and analysis events.
+  custom commands for `SET_TIMER`, `SET_ADAPTIVE_PARAMS`, and analysis events.
 - Replace the JNI estimate payload with:
 
 ```text
@@ -54,9 +54,10 @@ NoiseAnalysis(
 - Present relative ambient level and a suggested mask, never an uncalibrated
   SPL or an unsupported claim that a particular environmental source was
   detected.
-- Preserve existing preferences. Add `adaptiveModeEnabled=true`, safety-warning
-  acknowledgement, and per-sound feedback counters. AppCompat locale storage
-  becomes the sole language source.
+- Preserve existing preferences. Add `adaptiveSensitivity` / `adaptiveDelay`
+  (defaults 0.5; sensitivity 0 = Off; migrate from legacy `adaptiveModeEnabled`),
+  safety-warning acknowledgement, and per-sound feedback counters. AppCompat
+  locale storage becomes the sole language source.
 
 ## Implementation sequence
 
@@ -116,17 +117,21 @@ NoiseAnalysis(
 - Compare the smoothed ambient spectrum with stored mask templates and select
   the mask offering the best spectral coverage. Do not run a general scene
   classifier.
-- Update once per second with a three-second EMA. Auto-switch only when a
-  candidate beats the active score by at least 0.10 for three updates, followed
-  by a 15-second cooldown.
+- Update once per second with a three-second EMA. Auto-switch defaults match
+  prior behavior (score improvement ≥ 0.10 for three updates, 15 s cooldown) at
+  Sensitivity/Delay midpoints. Sensitivity 0 disables switching; Delay couples
+  trigger stability and cooldown (Stable ↔ Quick).
+- Soft-start every Play: 2 s silence hold, then 4 s intro ramp. Ambient scale
+  starts at min until the first estimate, then the existing envelope raises it.
 - Keep a manual selection until normalized spectral distance from its override
   baseline exceeds 0.25 for five seconds.
 - Never raise volume automatically. Low confidence retains the active sound.
 
 ### 6. Repair product behavior and UI
 
-- Add an adaptive-mode toggle, default enabled. Disabled mode may suggest but
-  never switch sounds.
+- Replace the adaptive-mode toggle with Sensitivity (0 = Off → Eager) and Delay
+  (Stable → Quick) sliders. Defaults mid. Disabled (sensitivity 0) may suggest
+  but never switch sounds.
 - Debounce volume persistence by 300 ms and clamp stored values.
 - Show favorites first and separate sound-selection and favorite click targets.
 - Localize sound, analysis, notification, accessibility, error, and safety
@@ -152,7 +157,7 @@ NoiseAnalysis(
 - Golden audio cases: silence, broadband noise, low-frequency traffic-like
   noise, speech/café mixture, rain, fan, and AC.
 - State tests: playback, timer, every focus transition, ducking, manual
-  override, adaptive cooldown, controller reconnection, and service teardown.
+  override, auto-switch delay/cooldown, soft-start, controller reconnection, and service teardown.
 - Instrumented coverage on API 26, 33, 35, and 36: permission outcomes,
   rotation, Activity recreation, screen lock, task removal, route changes,
   airplane mode, and 30-minute background playback.

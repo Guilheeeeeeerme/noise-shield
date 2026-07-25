@@ -20,7 +20,10 @@ data class UserPreferences(
     val lastSound: MaskingSoundId = MaskingSoundId.WHITE_NOISE,
     val lastVolume: Float = 0.3f,
     val favorites: Set<MaskingSoundId> = emptySet(),
-    val adaptiveModeEnabled: Boolean = true,
+    /** Auto-switch sensitivity; 0 = Off. Default mid matches prior adaptive-on. */
+    val adaptiveSensitivity: Float = 0.5f,
+    /** Auto-switch delay (coupled trigger + cooldown). Default mid = prior 3 updates + 15s. */
+    val adaptiveDelay: Float = 0.5f,
     val safetyWarningAcknowledged: Boolean = false,
     val feedbackCounters: Map<MaskingSoundId, Pair<Int, Int>> = emptyMap(),
     val preferredInput: AudioDevicePreference = AudioDevicePreference(),
@@ -35,6 +38,8 @@ class PreferencesRepository(private val context: Context) {
         val lastVolume = floatPreferencesKey("last_volume")
         val favorites = stringSetPreferencesKey("favorites")
         val adaptiveModeEnabled = booleanPreferencesKey("adaptive_mode_enabled")
+        val adaptiveSensitivity = floatPreferencesKey("adaptive_sensitivity")
+        val adaptiveDelay = floatPreferencesKey("adaptive_delay")
         val safetyWarningAcknowledged = booleanPreferencesKey("safety_warning_acknowledged")
         val feedbackCounters = stringSetPreferencesKey("feedback_counters")
         val preferredInputFingerprint = stringPreferencesKey("preferred_input_fingerprint")
@@ -42,6 +47,14 @@ class PreferencesRepository(private val context: Context) {
     }
 
     val preferences: Flow<UserPreferences> = context.dataStore.data.map { prefs ->
+        val sensitivity = prefs[Keys.adaptiveSensitivity]
+        val delay = prefs[Keys.adaptiveDelay]
+        val migratedSensitivity = when {
+            sensitivity != null -> sensitivity.coerceIn(0f, 1f)
+            prefs[Keys.adaptiveModeEnabled] == false -> 0f
+            else -> 0.5f
+        }
+        val migratedDelay = (delay ?: 0.5f).coerceIn(0f, 1f)
         UserPreferences(
             onboardingDone = prefs[Keys.onboardingDone] ?: false,
             themeMode = runCatching {
@@ -54,7 +67,8 @@ class PreferencesRepository(private val context: Context) {
             favorites = (prefs[Keys.favorites] ?: emptySet()).mapNotNull {
                 runCatching { MaskingSoundId.valueOf(it) }.getOrNull()
             }.toSet(),
-            adaptiveModeEnabled = prefs[Keys.adaptiveModeEnabled] ?: true,
+            adaptiveSensitivity = migratedSensitivity,
+            adaptiveDelay = migratedDelay,
             safetyWarningAcknowledged = prefs[Keys.safetyWarningAcknowledged] ?: false,
             feedbackCounters = decodeFeedbackCounters(prefs[Keys.feedbackCounters].orEmpty()),
             preferredInput = AudioDevicePreference(
@@ -92,8 +106,18 @@ class PreferencesRepository(private val context: Context) {
         }
     }
 
-    suspend fun setAdaptiveModeEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.adaptiveModeEnabled] = enabled }
+    suspend fun setAdaptiveSensitivity(value: Float) {
+        context.dataStore.edit {
+            it[Keys.adaptiveSensitivity] = value.coerceIn(0f, 1f)
+            it.remove(Keys.adaptiveModeEnabled)
+        }
+    }
+
+    suspend fun setAdaptiveDelay(value: Float) {
+        context.dataStore.edit {
+            it[Keys.adaptiveDelay] = value.coerceIn(0f, 1f)
+            it.remove(Keys.adaptiveModeEnabled)
+        }
     }
 
     suspend fun acknowledgeSafetyWarning() {

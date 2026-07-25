@@ -340,10 +340,30 @@ class SessionViewModel(
         AppCompatDelegate.setApplicationLocales(locales)
     }
 
-    fun setAdaptiveMode(enabled: Boolean) {
+    fun setAdaptiveSensitivity(value: Float) {
         if (_state.value.playing) return
-        sendBooleanCommand(MaskingPlaybackService.COMMAND_SET_ADAPTIVE_MODE, enabled)
-        viewModelScope.launch { prefsRepo.setAdaptiveModeEnabled(enabled) }
+        val clamped = value.coerceIn(0f, 1f)
+        _state.update {
+            it.copy(prefs = it.prefs.copy(adaptiveSensitivity = clamped))
+        }
+        sendAdaptiveParams(
+            sensitivity = clamped,
+            delay = _state.value.prefs.adaptiveDelay,
+        )
+        viewModelScope.launch { prefsRepo.setAdaptiveSensitivity(clamped) }
+    }
+
+    fun setAdaptiveDelay(value: Float) {
+        if (_state.value.playing) return
+        val clamped = value.coerceIn(0f, 1f)
+        _state.update {
+            it.copy(prefs = it.prefs.copy(adaptiveDelay = clamped))
+        }
+        sendAdaptiveParams(
+            sensitivity = _state.value.prefs.adaptiveSensitivity,
+            delay = clamped,
+        )
+        viewModelScope.launch { prefsRepo.setAdaptiveDelay(clamped) }
     }
 
     fun setInputDevice(fingerprint: String) {
@@ -435,7 +455,7 @@ class SessionViewModel(
         val adaptiveSwitch = if (
             sound != previousSound &&
             _state.value.playing &&
-            _state.value.prefs.adaptiveModeEnabled &&
+            _state.value.prefs.adaptiveSensitivity > 0f &&
             !_state.value.limitedMode &&
             sound == _state.value.estimate?.suggestedSoundId
         ) {
@@ -492,6 +512,17 @@ class SessionViewModel(
         controller?.sendCustomCommand(SessionCommand(action, Bundle.EMPTY), args)
     }
 
+    private fun sendAdaptiveParams(sensitivity: Float, delay: Float) {
+        val args = Bundle().apply {
+            putFloat(MaskingPlaybackService.ARG_SENSITIVITY, sensitivity.coerceIn(0f, 1f))
+            putFloat(MaskingPlaybackService.ARG_DELAY, delay.coerceIn(0f, 1f))
+        }
+        controller?.sendCustomCommand(
+            SessionCommand(MaskingPlaybackService.COMMAND_SET_ADAPTIVE_PARAMS, Bundle.EMPTY),
+            args,
+        )
+    }
+
     private fun isSystemMediaVolumeHigh(): Boolean {
         val audioManager = appContext.getSystemService(AudioManager::class.java)
         val maximum = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
@@ -504,7 +535,7 @@ class SessionViewModel(
             setMediaItem(NativeMaskingPlayer.mediaItemFor(prefs.lastSound))
             volume = prefs.lastVolume.coerceIn(0f, 1f)
         }
-        sendBooleanCommand(MaskingPlaybackService.COMMAND_SET_ADAPTIVE_MODE, prefs.adaptiveModeEnabled)
+        sendAdaptiveParams(prefs.adaptiveSensitivity, prefs.adaptiveDelay)
         applyAudioRouting(prefs)
     }
 

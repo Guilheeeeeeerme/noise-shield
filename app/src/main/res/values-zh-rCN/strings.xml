@@ -41,7 +41,7 @@
     <string name="limited_mode_body">麦克风已拒绝 — 手动掩蔽仍可用。分析与自动建议已关闭。</string>
     <string name="session_playing">掩蔽中</string>
     <string name="session_ready">点击开始</string>
-    <string name="session_controls_locked_hint">暂停后可更改声音、设备或自适应模式。</string>
+    <string name="session_controls_locked_hint">暂停后可更改声音、设备或自动切换设置。</string>
     <string name="state_initializing">正在初始化音频…</string>
     <string name="state_ready">就绪</string>
     <string name="state_permission_required">分析需要麦克风权限</string>
@@ -53,8 +53,14 @@
     <string name="label_volume">音量</string>
     <string name="label_timer">定时器</string>
     <string name="label_sounds">声音</string>
-    <string name="label_adaptive_mode">自适应模式</string>
-    <string name="adaptive_mode_description">跟随房间音量（安静时更低），仅在更匹配的掩蔽保持稳定时才切换。</string>
+    <string name="label_auto_switch">自动切换</string>
+    <string name="auto_switch_description">当环境持续变化时选择更合适的掩蔽。不会改变您的音量上限。</string>
+    <string name="label_sensitivity">灵敏度</string>
+    <string name="sensitivity_off">关闭</string>
+    <string name="sensitivity_eager">灵敏</string>
+    <string name="label_delay">延迟</string>
+    <string name="delay_stable">稳定</string>
+    <string name="delay_quick">快速</string>
     <string name="placement_tip">将扬声器对准噪声源；将麦克风放在您希望更安静的位置。若蓝牙同时绑定输入输出，请分别选择。</string>
     <string name="cover_listening">聆听中</string>
     <string name="cover_masking_external">正在掩蔽外部噪声</string>
