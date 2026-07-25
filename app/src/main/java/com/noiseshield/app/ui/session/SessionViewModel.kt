@@ -299,13 +299,13 @@ class SessionViewModel(
     }
 
     fun setAdaptiveSwitching(value: Float) {
-        if (_state.value.prefs.adaptiveModeEnabled) return
+        if (!_state.value.prefs.adaptiveModeEnabled) return
         val clamped = value.coerceIn(0f, 1f)
         _state.update {
             it.copy(prefs = it.prefs.copy(adaptiveSwitching = clamped))
         }
         sendAdaptiveParams(
-            enabled = false,
+            enabled = true,
             switching = clamped,
             fade = _state.value.prefs.adaptiveFade,
         )
@@ -313,13 +313,13 @@ class SessionViewModel(
     }
 
     fun setAdaptiveFade(value: Float) {
-        if (_state.value.prefs.adaptiveModeEnabled) return
+        if (!_state.value.prefs.adaptiveModeEnabled) return
         val clamped = value.coerceIn(0f, 1f)
         _state.update {
             it.copy(prefs = it.prefs.copy(adaptiveFade = clamped))
         }
         sendAdaptiveParams(
-            enabled = false,
+            enabled = true,
             switching = _state.value.prefs.adaptiveSwitching,
             fade = clamped,
         )

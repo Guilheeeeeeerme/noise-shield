@@ -49,7 +49,7 @@ class NativeMaskingPlayer(
     private var selectedSound = MaskingSoundId.WHITE_NOISE
     private var volume = 1.0f
     /** Ambient-linked intensity under the user volume ceiling (1 = full slider). */
-    private var ambientScale = AMBIENT_SCALE_MIN
+    private var ambientScale = 1f
     /** Audio-focus duck multiplier (1 = unducked). */
     private var focusDuck = 1f
     /** Soft-start multiplier: 0 at Play, then ramps to 1 over fade duration. */
@@ -220,7 +220,7 @@ class NativeMaskingPlayer(
     }
 
     fun resetAmbientScale() {
-        ambientScale = AMBIENT_SCALE_MIN
+        ambientScale = 1f
         applyEffectiveVolume()
     }
 

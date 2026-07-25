@@ -72,7 +72,7 @@ fun SessionScreen(
 ) {
     val sessionLocked = state.playing
     val adaptiveOn = state.prefs.adaptiveModeEnabled
-    val slidersEnabled = !adaptiveOn
+    val slidersEnabled = adaptiveOn
     Scaffold(
         topBar = {
             TopAppBar(

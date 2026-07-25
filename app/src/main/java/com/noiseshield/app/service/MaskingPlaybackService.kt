@@ -44,10 +44,10 @@ class MaskingPlaybackService : MediaSessionService() {
     private var adaptiveCooldownUntil = 0L
     private var breakReminderDeadline = 0L
     private var breakReminderSent = false
-    private var smoothedAmbientScale = AMBIENT_SCALE_MIN
+    private var smoothedAmbientScale = 1f
     private var hasAmbientScale = false
     private var coveredLatched = false
-    private var ambientTargetScale = AMBIENT_SCALE_MIN
+    private var ambientTargetScale = 1f
     private var preferredInputDeviceId = 0
     private var preferredOutputDeviceId = 0
     private val stopPausedService = Runnable {
@@ -309,8 +309,8 @@ class MaskingPlaybackService : MediaSessionService() {
     private fun resetAmbientIntensity() {
         handler.removeCallbacks(envelopeTick)
         hasAmbientScale = false
-        smoothedAmbientScale = AMBIENT_SCALE_MIN
-        ambientTargetScale = AMBIENT_SCALE_MIN
+        smoothedAmbientScale = 1f
+        ambientTargetScale = 1f
         coveredLatched = false
         player.resetAmbientScale()
     }
@@ -361,9 +361,9 @@ class MaskingPlaybackService : MediaSessionService() {
             manualBaseline = null
             manualShiftUpdates = 0
         }
-        // Adaptive ON forces mid params; OFF uses live Switching/Fade.
-        val switching = if (adaptiveModeEnabled) ADAPTIVE_MID else adaptiveSwitching
-        val fade = if (adaptiveModeEnabled) ADAPTIVE_MID else adaptiveFade
+        if (!adaptiveModeEnabled) return
+        val switching = adaptiveSwitching
+        val fade = adaptiveFade
         val requiredImprovement = scoreImprovementForSwitching(switching)
         val requiredStable = stableUpdatesForFade(fade)
         val cooldownMs = cooldownMsForFade(fade)
@@ -385,8 +385,7 @@ class MaskingPlaybackService : MediaSessionService() {
         candidateUpdates = 0
     }
 
-    private fun effectiveFade(): Float =
-        if (adaptiveModeEnabled) ADAPTIVE_MID else adaptiveFade
+    private fun effectiveFade(): Float = adaptiveFade
 
     /** Higher Switching → lower score-improvement gate. 0→0.20, 0.5→0.10, 1→0.05. */
     private fun scoreImprovementForSwitching(switching: Float): Float {
@@ -471,7 +470,6 @@ class MaskingPlaybackService : MediaSessionService() {
         private const val PAUSED_SERVICE_STOP_DELAY_MS = 30_000L
         private const val MEL_BANDS = 24
         private const val MIN_CONFIDENCE = 0.03f
-        private const val ADAPTIVE_MID = 0.5f
         private const val SCORE_IMPROVEMENT_MIN = 0.05f
         private const val SCORE_IMPROVEMENT_MID = 0.10f
         private const val SCORE_IMPROVEMENT_MAX = 0.20f
