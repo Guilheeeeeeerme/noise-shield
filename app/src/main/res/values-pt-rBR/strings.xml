@@ -127,4 +127,21 @@
     <string name="feedback_body">O perfil de máscara ajudou com o ruído ao seu redor?</string>
     <string name="feedback_yes">Sim</string>
     <string name="feedback_no">Não</string>
+    <string name="action_hide_audio_devices">Ocultar dispositivos de áudio</string>
+    <string name="action_show_audio_devices">Dispositivos de áudio</string>
+    <string name="media_volume_guidance">Aumente o volume de mídia do aparelho para ouvir o mascaramento.</string>
+    <string name="mode_focus">Foco profundo</string>
+    <string name="mode_office">Escritório e conversas</string>
+    <string name="mode_sleep">Sono</string>
+    <string name="mode_normal_description">Trocas equilibradas e fades de 2 segundos — o comportamento original do Noise Shield.</string>
+    <string name="mode_sleep_description">Muito estável, com fades lentos e suaves para ruídos noturnos constantes.</string>
+    <string name="mode_focus_description">Mudanças seletivas e suaves que evitam interromper o trabalho concentrado.</string>
+    <string name="mode_office_description">Responde rapidamente a conversas e mudanças na atividade do ambiente.</string>
+    <string name="mode_travel_description">Resposta mais rápida para trânsito, transporte, multidões e ruídos variáveis.</string>
+    <string name="state_starting">Iniciando som…</string>
+    <string name="state_audible">Som reproduzindo</string>
+    <string name="state_fading">Trocando som…</string>
+    <string name="state_muted_by_device">O volume de mídia está mudo</string>
+    <string name="state_timer_ended">Temporizador encerrado — som parado</string>
+    <string name="volume_percent">%1$d%%</string>
 </resources>

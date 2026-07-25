@@ -20,7 +20,7 @@ Ao instalar fora da Play Store, o Android pode solicitar autorização para inst
 - Cinco ambientes prontos: **Normal**, **Sono**, **Foco**, **Escritório** e **Viagem**
 - Volume ajustável e oito sons: white, pink, brown, oceano, chuva, ventilador, ar-condicionado e café
 - Análise do ambiente e troca suave de som em tempo real
-- Temporizador, favoritos, rotas separadas de microfone e alto-falante
+- Temporizador e rotas separadas de microfone e alto-falante
 - Reprodução em segundo plano com controles na notificação
 - Interface em português, inglês, espanhol, francês e chinês simplificado
 

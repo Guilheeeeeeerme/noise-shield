@@ -206,10 +206,14 @@ class NativeMaskingPlayer(
         volume: Float,
         volumeOperationType: Int,
     ): ListenableFuture<*> {
-        this.volume = volume.coerceIn(0f, 1f)
+        setAppVolume(volume)
+        return Futures.immediateVoidFuture()
+    }
+
+    fun setAppVolume(value: Float) {
+        volume = value.coerceIn(0f, 1f)
         applyEffectiveVolume()
         invalidateState()
-        return Futures.immediateVoidFuture()
     }
 
     /**

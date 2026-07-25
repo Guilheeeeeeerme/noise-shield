@@ -102,8 +102,8 @@ class SessionViewModel(
     private var uiForeground = false
     private var safetyMonitorJob: Job? = null
     private var volumePersistenceJob: Job? = null
-    /** Keeps delayed MediaController callbacks from snapping the slider backward. */
-    private var requestedVolume: Float? = null
+    private var playbackReconcileJob: Job? = null
+    private var requestedPlaying: Boolean? = null
     private var timerDeadlineElapsedRealtime: Long? = null
     private var lastAppliedInputDeviceId: Int? = null
     private var lastAppliedOutputDeviceId: Int? = null
@@ -238,7 +238,8 @@ class SessionViewModel(
     }
 
     fun togglePlay() {
-        if (_state.value.playing) stopSession() else startSession()
+        val current = _state.value
+        if (current.playing || current.audible) stopSession() else startSession()
     }
 
     fun startSession() {
@@ -249,8 +250,9 @@ class SessionViewModel(
             return
         }
         val current = _state.value
+        requestedPlaying = true
         mediaController.setMediaItem(NativeMaskingPlayer.mediaItemFor(current.sound))
-        mediaController.volume = current.volume
+        sendVolume(current.volume)
         mediaController.prepare()
         mediaController.play()
         _state.update {
@@ -285,9 +287,11 @@ class SessionViewModel(
             prefsRepo.setLastSound(current.sound)
             prefsRepo.setLastVolume(current.volume)
         }
+        reconcilePlayback(true)
     }
 
     fun stopSession() {
+        requestedPlaying = false
         controller?.pause()
         safetyMonitorJob?.cancel()
         _state.update {
@@ -299,6 +303,7 @@ class SessionViewModel(
                 adaptiveSwitchTo = null,
             )
         }
+        reconcilePlayback(false)
     }
 
     fun selectSound(sound: MaskingSoundId) {
@@ -309,9 +314,8 @@ class SessionViewModel(
 
     fun setVolume(volume: Float) {
         val clamped = volume.coerceIn(0f, 1f)
-        requestedVolume = clamped
         _state.update { it.copy(volume = clamped) }
-        controller?.volume = clamped
+        sendVolume(clamped)
         volumePersistenceJob?.cancel()
         volumePersistenceJob = viewModelScope.launch {
             delay(250L)
@@ -436,17 +440,7 @@ class SessionViewModel(
     }
 
     private fun syncPlayer(player: Player) {
-        val pendingVolume = requestedVolume
-        val displayedVolume = if (pendingVolume != null) {
-            if (kotlin.math.abs(player.volume - pendingVolume) < 0.001f) {
-                requestedVolume = null
-                player.volume
-            } else {
-                pendingVolume
-            }
-        } else {
-            player.volume
-        }
+        val displayedPlaying = requestedPlaying ?: player.playWhenReady
         val previousSound = _state.value.sound
         val sound = player.currentMediaItem?.mediaId?.let {
             runCatching { MaskingSoundId.valueOf(it) }.getOrNull()
@@ -483,14 +477,13 @@ class SessionViewModel(
         }
         _state.update {
             it.copy(
-                playing = player.playWhenReady,
+                playing = displayedPlaying,
                 audible = player.isPlaying && systemMediaVolumePercent() > 0,
                 sound = sound,
-                volume = displayedVolume,
                 systemMediaVolumePercent = systemMediaVolumePercent(),
                 runtimeState = runtime,
                 adaptiveSwitchTo = adaptiveSwitch,
-                maskIntensity = if (player.playWhenReady) it.maskIntensity else null,
+                maskIntensity = if (displayedPlaying) it.maskIntensity else null,
             )
         }
         if (sound != previousSound) {
@@ -510,9 +503,28 @@ class SessionViewModel(
         }
     }
 
+    private fun reconcilePlayback(shouldPlay: Boolean) {
+        playbackReconcileJob?.cancel()
+        playbackReconcileJob = viewModelScope.launch {
+            delay(500L)
+            controller?.let { mediaController ->
+                if (mediaController.playWhenReady != shouldPlay) {
+                    if (shouldPlay) mediaController.play() else mediaController.pause()
+                }
+            }
+            delay(300L)
+            if (requestedPlaying == shouldPlay) {
+                requestedPlaying = null
+                controller?.let(::syncPlayer)
+            }
+        }
+    }
+
     private fun receiveTimer(args: Bundle) {
         val deadline = args.getLong(MaskingPlaybackService.ARG_TIMER_DEADLINE)
         val pausedRemaining = args.getLong(MaskingPlaybackService.ARG_TIMER_REMAINING)
+        val completed = args.getBoolean(MaskingPlaybackService.ARG_TIMER_COMPLETED)
+        if (completed) requestedPlaying = null
         timerDeadlineElapsedRealtime = deadline.takeIf { it > 0L }
         val remainingMs = when {
             deadline > 0L -> deadline - SystemClock.elapsedRealtime()
@@ -521,9 +533,11 @@ class SessionViewModel(
         }.coerceAtLeast(0L)
         _state.update {
             it.copy(
+                playing = if (completed) false else it.playing,
+                audible = if (completed) false else it.audible,
                 timerRemainingSec = remainingMs.takeIf { value -> value > 0L }
                     ?.let { value -> ((value + 999L) / 1_000L).toInt() },
-                runtimeState = if (args.getBoolean(MaskingPlaybackService.ARG_TIMER_COMPLETED)) {
+                runtimeState = if (completed) {
                     SessionRuntimeState.TIMER_ENDED
                 } else {
                     it.runtimeState
@@ -545,6 +559,16 @@ class SessionViewModel(
         }
         controller?.sendCustomCommand(
             SessionCommand(MaskingPlaybackService.COMMAND_SET_ADAPTIVE_PARAMS, Bundle.EMPTY),
+            args,
+        )
+    }
+
+    private fun sendVolume(volume: Float) {
+        val args = Bundle().apply {
+            putFloat(MaskingPlaybackService.ARG_VOLUME, volume.coerceIn(0f, 1f))
+        }
+        controller?.sendCustomCommand(
+            SessionCommand(MaskingPlaybackService.COMMAND_SET_APP_VOLUME, Bundle.EMPTY),
             args,
         )
     }
@@ -588,8 +612,8 @@ class SessionViewModel(
     private fun applyPreferencesToController(prefs: UserPreferences) {
         controller?.apply {
             setMediaItem(NativeMaskingPlayer.mediaItemFor(prefs.lastSound))
-            volume = prefs.lastVolume
         }
+        sendVolume(prefs.lastVolume)
         sendAdaptiveParams(
             enabled = true,
             switching = prefs.maskingPreset.switching,

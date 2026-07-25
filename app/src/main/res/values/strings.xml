@@ -65,10 +65,7 @@
     <string name="session_controls_locked_hint">Pause to change sound or devices.</string>
     <string name="label_adaptive_mode">Adaptive mode</string>
     <string name="adaptive_mode_description">Automatically follows the room using your Switching and Fade settings.</string>
-    <string name="adaptive_requires_mic">Microphone access is required for automatic masking. Manual sounds still work.</string>
     <string name="media_volume_guidance">Raise the device media volume to hear the mask.</string>
-    <string name="action_tune_adaptive">Tune adaptive controls</string>
-    <string name="action_hide_controls">Hide adaptive controls</string>
     <string name="action_show_audio_devices">Audio devices</string>
     <string name="action_hide_audio_devices">Hide audio devices</string>
     <string name="label_masking_mode">Environment</string>

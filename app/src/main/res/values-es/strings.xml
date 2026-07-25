@@ -123,4 +123,25 @@
     <string name="feedback_body">¿El perfil de máscara ayudó con el ruido a tu alrededor?</string>
     <string name="feedback_yes">Sí</string>
     <string name="feedback_no">No</string>
+    <string name="action_hide_audio_devices">Ocultar dispositivos de audio</string>
+    <string name="action_show_audio_devices">Dispositivos de audio</string>
+    <string name="media_volume_guidance">Sube el volumen multimedia del dispositivo para oír el enmascaramiento.</string>
+    <string name="mode_focus">Concentración profunda</string>
+    <string name="mode_office">Oficina y conversaciones</string>
+    <string name="mode_sleep">Sueño</string>
+    <string name="mode_normal_description">Cambios equilibrados y fundidos de 2 segundos: el comportamiento original de Noise Shield.</string>
+    <string name="mode_sleep_description">Muy estable, con fundidos lentos y suaves para ruidos nocturnos constantes.</string>
+    <string name="mode_focus_description">Cambios selectivos y suaves que evitan interrumpir el trabajo concentrado.</string>
+    <string name="mode_office_description">Responde rápidamente a conversaciones y cambios de actividad en el trabajo.</string>
+    <string name="mode_travel_description">La respuesta más rápida para tráfico, transporte, multitudes y ruido cambiante.</string>
+    <string name="state_starting">Iniciando sonido…</string>
+    <string name="state_audible">Sonido en reproducción</string>
+    <string name="state_fading">Cambiando sonido…</string>
+    <string name="state_muted_by_device">El volumen multimedia está silenciado</string>
+    <string name="state_timer_ended">Temporizador finalizado — sonido detenido</string>
+    <string name="support_title">Invítame a un café ☕</string>
+    <string name="support_body">Si Noise Shield te resulta útil, apoya su desarrollo con un PIX.</string>
+    <string name="support_copy_pix">Copiar PIX: %1$s</string>
+    <string name="support_contact">Contacto: %1$s</string>
+    <string name="volume_percent">%1$d%%</string>
 </resources>

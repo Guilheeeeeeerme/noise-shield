@@ -1,5 +1,14 @@
 package com.noiseshield.app.ui.session
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,8 +29,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -44,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -64,7 +72,6 @@ fun SessionScreen(
     onSelectSound: (MaskingSoundId) -> Unit,
     onVolume: (Float) -> Unit,
     onTimer: (Int?) -> Unit,
-    onToggleFavorite: (MaskingSoundId) -> Unit,
     onSettings: () -> Unit,
     onRequestMic: () -> Unit,
     onMaskingPreset: (MaskingPreset) -> Unit,
@@ -74,6 +81,7 @@ fun SessionScreen(
     onDismissBreakReminder: () -> Unit,
 ) {
     val sessionLocked = state.playing
+    val sessionActive = state.playing || state.audible
     var routesExpanded by rememberSaveable { mutableStateOf(false) }
     Scaffold(
         topBar = {
@@ -126,7 +134,7 @@ fun SessionScreen(
                     .alpha(if (state.runtimeState == SessionRuntimeState.INITIALIZING) 0.45f else 1f),
                 contentAlignment = Alignment.Center,
             ) {
-                if (state.playing) {
+                if (sessionActive) {
                     Icon(
                         painter = painterResource(R.drawable.ic_pause),
                         contentDescription = stringResource(R.string.action_pause),
@@ -212,9 +220,8 @@ fun SessionScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                MaskingSoundId.entries.sortedByDescending { it in state.favorites }.forEach { sound ->
+                MaskingSoundId.entries.forEach { sound ->
                     val selected = state.sound == sound
-                    val fav = sound in state.favorites
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(20.dp))
@@ -230,22 +237,6 @@ fun SessionScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(soundLabel(sound))
-                        IconButton(
-                            onClick = { onToggleFavorite(sound) },
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = if (fav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                                contentDescription = stringResource(
-                                    if (fav) R.string.accessibility_remove_favorite
-                                    else R.string.accessibility_add_favorite,
-                                    soundLabel(sound),
-                                ),
-                                modifier = Modifier.size(18.dp),
-                                tint = if (fav) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                            )
-                        }
                     }
                 }
             }
@@ -334,7 +325,6 @@ fun SessionScreen(
                     level = state.estimate?.levelBucket,
                     relativeDbfs = state.estimate?.relativeDbfs,
                     maskIntensity = state.maskIntensity,
-                    melEnergies = state.estimate?.melBandEnergies.orEmpty(),
                     suggestedSound = state.estimate?.suggestedSoundId,
                     coverState = state.coverState,
                     limited = false,
@@ -404,7 +394,6 @@ private fun NoiseLevelIndicator(
     level: NoiseLevelBucket?,
     relativeDbfs: Float?,
     maskIntensity: Float?,
-    melEnergies: List<Float>,
     suggestedSound: MaskingSoundId?,
     coverState: CoverState?,
     limited: Boolean,
@@ -413,6 +402,32 @@ private fun NoiseLevelIndicator(
         limited || relativeDbfs == null -> 0.1f
         else -> dbfsToMeterFill(relativeDbfs)
     }
+    val animatedFill by animateFloatAsState(
+        targetValue = continuousFill,
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 180f),
+        label = "noise level",
+    )
+    val indicatorColor by animateColorAsState(
+        targetValue = when (coverState) {
+            CoverState.COVERED -> MaterialTheme.colorScheme.tertiary
+            CoverState.MASKING_EXTERNAL -> MaterialTheme.colorScheme.secondary
+            else -> MaterialTheme.colorScheme.primary
+        },
+        label = "noise color",
+    )
+    val pulseTransition = rememberInfiniteTransition(label = "noise pulse")
+    val pulse by pulseTransition.animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = (1_050 - animatedFill * 500).toInt().coerceAtLeast(420),
+                easing = FastOutSlowInEasing,
+            ),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "noise pulse scale",
+    )
     val intensity = maskIntensity?.coerceIn(0f, 1f)
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
@@ -425,11 +440,25 @@ private fun NoiseLevelIndicator(
         ) {
             Box(
                 modifier = Modifier
-                    .size((20 + (80 * continuousFill)).dp)
+                    .size((48 + (58 * animatedFill)).dp)
+                    .border(
+                        width = 2.dp,
+                        color = indicatorColor.copy(alpha = 0.18f + animatedFill * 0.18f),
+                        shape = CircleShape,
+                    )
+                    .clip(CircleShape),
+            )
+            Box(
+                modifier = Modifier
+                    .size((24 + (62 * animatedFill)).dp)
+                    .graphicsLayer {
+                        scaleX = pulse
+                        scaleY = pulse
+                    }
                     .clip(CircleShape)
                     .background(
-                        MaterialTheme.colorScheme.primary.copy(
-                            alpha = 0.35f + continuousFill * 0.4f,
+                        indicatorColor.copy(
+                            alpha = 0.4f + animatedFill * 0.42f,
                         ),
                     ),
             )
@@ -471,10 +500,6 @@ private fun NoiseLevelIndicator(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-        if (!limited && melEnergies.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            MelSpectrumStrip(energies = melEnergies)
         }
     }
 }
@@ -568,36 +593,6 @@ private fun DeviceChipRow(
                 onClick = { onSelect(device.fingerprint) },
                 enabled = enabled,
                 label = { Text(device.name) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun MelSpectrumStrip(energies: List<Float>) {
-    val max = energies.maxOrNull()?.coerceAtLeast(1e-6f) ?: 1f
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(36.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
-            .padding(horizontal = 6.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        energies.forEach { energy ->
-            val heightFraction = (energy / max).coerceIn(0.08f, 1f)
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height((28 * heightFraction).dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(
-                        MaterialTheme.colorScheme.primary.copy(
-                            alpha = 0.55f + heightFraction * 0.35f,
-                        ),
-                    ),
             )
         }
     }

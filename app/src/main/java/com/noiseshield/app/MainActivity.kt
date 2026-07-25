@@ -128,7 +128,6 @@ private fun AppRoot(
                 onSelectSound = viewModel::selectSound,
                 onVolume = viewModel::setVolume,
                 onTimer = viewModel::setTimerMinutes,
-                onToggleFavorite = viewModel::toggleFavorite,
                 onSettings = { navController.navigate("settings") },
                 onRequestMic = onRequestMic,
                 onMaskingPreset = viewModel::setMaskingPreset,

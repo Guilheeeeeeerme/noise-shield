@@ -123,4 +123,25 @@
     <string name="feedback_body">Le profil de masquage a-t-il aidé face au bruit autour de vous ?</string>
     <string name="feedback_yes">Oui</string>
     <string name="feedback_no">Non</string>
+    <string name="action_hide_audio_devices">Masquer les appareils audio</string>
+    <string name="action_show_audio_devices">Appareils audio</string>
+    <string name="media_volume_guidance">Augmentez le volume multimédia de l’appareil pour entendre le masquage.</string>
+    <string name="mode_focus">Concentration profonde</string>
+    <string name="mode_office">Bureau et conversations</string>
+    <string name="mode_sleep">Sommeil</string>
+    <string name="mode_normal_description">Commutations équilibrées et fondus de 2 secondes — le comportement Noise Shield d’origine.</string>
+    <string name="mode_sleep_description">Très stable, avec des fondus lents et doux pour les bruits nocturnes réguliers.</string>
+    <string name="mode_focus_description">Des changements sélectifs et fluides qui préservent la concentration.</string>
+    <string name="mode_office_description">Réagit rapidement aux conversations et aux changements d’activité.</string>
+    <string name="mode_travel_description">Réponse la plus rapide pour la circulation, les transports, les foules et le bruit changeant.</string>
+    <string name="state_starting">Démarrage du son…</string>
+    <string name="state_audible">Son en cours</string>
+    <string name="state_fading">Changement de son…</string>
+    <string name="state_muted_by_device">Le volume multimédia est coupé</string>
+    <string name="state_timer_ended">Minuteur terminé — son arrêté</string>
+    <string name="support_title">Offrez-moi un café ☕</string>
+    <string name="support_body">Si Noise Shield vous aide, soutenez son développement avec un PIX.</string>
+    <string name="support_copy_pix">Copier le PIX : %1$s</string>
+    <string name="support_contact">Contact : %1$s</string>
+    <string name="volume_percent">%1$d%%</string>
 </resources>

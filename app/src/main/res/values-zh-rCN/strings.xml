@@ -123,4 +123,25 @@
     <string name="feedback_body">该掩蔽配置是否有助于应对周围噪声？</string>
     <string name="feedback_yes">有</string>
     <string name="feedback_no">没有</string>
+    <string name="action_hide_audio_devices">隐藏音频设备</string>
+    <string name="action_show_audio_devices">音频设备</string>
+    <string name="media_volume_guidance">请调高设备媒体音量以听到遮蔽声。</string>
+    <string name="mode_focus">深度专注</string>
+    <string name="mode_office">办公室与谈话</string>
+    <string name="mode_sleep">睡眠</string>
+    <string name="mode_normal_description">均衡切换和 2 秒淡入淡出——Noise Shield 的原始行为。</string>
+    <string name="mode_sleep_description">非常稳定，以缓慢柔和的淡入淡出应对持续的夜间噪音。</string>
+    <string name="mode_focus_description">选择性平滑切换，避免打断专注工作。</string>
+    <string name="mode_office_description">快速响应谈话和不断变化的工作场所活动。</string>
+    <string name="mode_travel_description">最快响应交通、通勤、人群和快速变化的噪音。</string>
+    <string name="state_starting">正在启动声音…</string>
+    <string name="state_audible">声音正在播放</string>
+    <string name="state_fading">正在切换声音…</string>
+    <string name="state_muted_by_device">媒体音量已静音</string>
+    <string name="state_timer_ended">计时结束——声音已停止</string>
+    <string name="support_title">请我喝杯咖啡 ☕</string>
+    <string name="support_body">如果 Noise Shield 对你有帮助，可通过 PIX 支持开发。</string>
+    <string name="support_copy_pix">复制 PIX：%1$s</string>
+    <string name="support_contact">联系方式：%1$s</string>
+    <string name="volume_percent">%1$d%%</string>
 </resources>

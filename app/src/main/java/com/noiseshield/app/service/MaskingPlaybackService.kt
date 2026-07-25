@@ -196,6 +196,7 @@ class MaskingPlaybackService : MediaSessionService() {
             val commands = SessionCommands.Builder()
                 .add(SessionCommand(COMMAND_SET_TIMER, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_SET_ADAPTIVE_PARAMS, Bundle.EMPTY))
+                .add(SessionCommand(COMMAND_SET_APP_VOLUME, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_SET_UI_FOREGROUND, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_SET_AUDIO_DEVICES, Bundle.EMPTY))
                 .add(SessionCommand(COMMAND_ANALYSIS_EVENT, Bundle.EMPTY))
@@ -233,6 +234,9 @@ class MaskingPlaybackService : MediaSessionService() {
                     adaptiveSwitching = args.getFloat(ARG_SWITCHING, 0.5f).coerceIn(0f, 1f)
                     adaptiveFade = args.getFloat(ARG_FADE, 0.5f).coerceIn(0f, 1f)
                     player.setSoftStartFade(effectiveFade())
+                }
+                COMMAND_SET_APP_VOLUME -> {
+                    player.setAppVolume(args.getFloat(ARG_VOLUME, 0.5f))
                 }
                 COMMAND_SET_UI_FOREGROUND -> {
                     uiForeground = args.getBoolean(ARG_ENABLED, false)
@@ -439,6 +443,7 @@ class MaskingPlaybackService : MediaSessionService() {
     companion object {
         const val COMMAND_SET_TIMER = "com.noiseshield.app.SET_TIMER"
         const val COMMAND_SET_ADAPTIVE_PARAMS = "com.noiseshield.app.SET_ADAPTIVE_PARAMS"
+        const val COMMAND_SET_APP_VOLUME = "com.noiseshield.app.SET_APP_VOLUME"
         const val COMMAND_SET_UI_FOREGROUND = "com.noiseshield.app.SET_UI_FOREGROUND"
         const val COMMAND_SET_AUDIO_DEVICES = "com.noiseshield.app.SET_AUDIO_DEVICES"
         const val COMMAND_ANALYSIS_EVENT = "com.noiseshield.app.ANALYSIS_EVENT"
@@ -449,6 +454,7 @@ class MaskingPlaybackService : MediaSessionService() {
         const val ARG_ENABLED = "enabled"
         const val ARG_SWITCHING = "switching"
         const val ARG_FADE = "fade"
+        const val ARG_VOLUME = "volume"
         const val ARG_RELATIVE_DBFS = "relative_dbfs"
         const val ARG_LEVEL_BUCKET = "level_bucket"
         const val ARG_SOUND_ID = "sound_id"
