@@ -1,51 +1,39 @@
 # Noise Shield
 
-Android-only, offline-first app that reduces perceived environmental noise through **adaptive masking**.
+> Seu espaço, mais silencioso.
 
-All audio capture, analysis, and playback run on-device via a **C++ Oboe** engine. No account, no backend, no network required.
+Mascaramento sonoro adaptativo, privado e offline para Android. O Noise Shield analisa o ambiente e reproduz sons de mascaramento inteiramente no dispositivo — sem conta, nuvem ou envio de áudio.
 
-## Stack
+[![Baixar APK](https://img.shields.io/badge/baixar-APK-63A9FF?style=for-the-badge&logo=android&logoColor=08111F)](https://github.com/Guilheeeeeeerme/noise-shield/releases/latest/download/noise-shield-v1.0.0.apk)
+[![Abrir site](https://img.shields.io/badge/abrir-GitHub_Pages-68E3D2?style=for-the-badge&logo=github&logoColor=08111F)](https://guilheeeeeeerme.github.io/noise-shield/)
 
-| Layer | Tech |
-|-------|------|
-| UI | Kotlin, Jetpack Compose, Material 3 |
-| Audio | Google Oboe (NDK), JNI |
-| Storage | DataStore (prefs, favorites, local feedback) |
-| Background | Foreground media-playback service |
+## Download
 
-## Modules
+| Versão | Android | Arquivo |
+|---|---:|---|
+| 1.0.0 | 8.0+ (API 26) | [Baixar `noise-shield-v1.0.0.apk`](https://github.com/Guilheeeeeeerme/noise-shield/releases/latest/download/noise-shield-v1.0.0.apk) |
 
-```
-app/            Compose UI, session, settings, media service
-audio-engine/   Oboe player + mic capture + heuristic classifier
-```
+Ao instalar fora da Play Store, o Android pode solicitar autorização para instalar apps pelo navegador ou gerenciador de arquivos.
 
-## Prerequisites
+## O que ele faz
 
-- Android Studio Ladybug (or newer) with NDK + CMake
-- JDK 17
-- Android device or emulator (API 26+)
+- Cinco ambientes prontos: **Normal**, **Sono**, **Foco**, **Escritório** e **Viagem**
+- Volume ajustável e oito sons: white, pink, brown, oceano, chuva, ventilador, ar-condicionado e café
+- Análise do ambiente e troca suave de som em tempo real
+- Temporizador, favoritos, rotas separadas de microfone e alto-falante
+- Reprodução em segundo plano com controles na notificação
+- Interface em português, inglês, espanhol, francês e chinês simplificado
 
-## Build & run
+## Privacidade
 
-1. Open this folder in Android Studio (Gradle sync will FetchContent Oboe).
-2. Or from CLI (with `ANDROID_HOME` set):
+Todo o processamento acontece localmente com Kotlin, Jetpack Compose e um motor C++/Oboe. O Noise Shield não exige conta, não possui backend e não envia gravações ou métricas para a internet.
 
-```bash
-./gradlew :app:assembleDebug
-./gradlew :app:installDebug
-```
+## Apoie o projeto
 
-## Core features
+Se o Noise Shield foi útil, me pague um café:
 
-- Masking session: 8 procedural loops (white/pink/brown, ocean, rain, fan, AC, cafe), volume, timer
-- Smooth crossfade when switching sounds or auto-applying a suggestion
-- On-device mic analysis during an active session; limited mode if mic denied
-- Background playback with notification controls
-- Local favorites, EN/PT, light/dark/system theme
-- Skippable onboarding; no medical/ANC claims
+**PIX e contato:** [`ferreiraga@outlook.com`](mailto:ferreiraga@outlook.com)
 
-## Privacy
+---
 
-- Raw microphone audio never leaves the device
-- No cloud sync or analytics backend in this build
+Noise Shield não substitui protetores auditivos, tratamento médico ou cancelamento ativo de ruído.

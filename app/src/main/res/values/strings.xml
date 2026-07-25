@@ -27,6 +27,10 @@
     <string name="settings_language">Language</string>
     <string name="settings_onboarding">Replay onboarding</string>
     <string name="settings_privacy">All processing is local. No account, no cloud sync, no audio upload.</string>
+    <string name="support_title">Buy me a coffee ☕</string>
+    <string name="support_body">If Noise Shield helps you, support its development with a PIX.</string>
+    <string name="support_copy_pix">Copy PIX: %1$s</string>
+    <string name="support_contact">Contact: %1$s</string>
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>

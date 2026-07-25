@@ -1,5 +1,7 @@
 package com.noiseshield.app.ui.settings
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,16 +18,21 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.noiseshield.app.R
 import com.noiseshield.app.data.AppLanguage
@@ -42,6 +49,8 @@ fun SettingsScreen(
     onLanguage: (AppLanguage) -> Unit,
     onShowOnboarding: () -> Unit,
 ) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     Scaffold(
         topBar = {
             TopAppBar(
@@ -119,6 +128,37 @@ fun SettingsScreen(
             )
 
             Spacer(Modifier.height(16.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = stringResource(R.string.support_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.support_body),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    TextButton(
+                        onClick = { clipboard.setText(AnnotatedString(SUPPORT_EMAIL)) },
+                    ) {
+                        Text(stringResource(R.string.support_copy_pix, SUPPORT_EMAIL))
+                    }
+                    TextButton(
+                        onClick = {
+                            val intent = Intent(
+                                Intent.ACTION_SENDTO,
+                                Uri.parse("mailto:$SUPPORT_EMAIL"),
+                            )
+                            runCatching { context.startActivity(intent) }
+                        },
+                    ) {
+                        Text(stringResource(R.string.support_contact, SUPPORT_EMAIL))
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
             Text(
                 text = stringResource(R.string.settings_privacy),
                 style = MaterialTheme.typography.bodyMedium,
@@ -127,3 +167,5 @@ fun SettingsScreen(
         }
     }
 }
+
+private const val SUPPORT_EMAIL = "ferreiraga@outlook.com"

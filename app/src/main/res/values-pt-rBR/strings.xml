@@ -27,6 +27,10 @@
     <string name="settings_language">Idioma</string>
     <string name="settings_onboarding">Ver introdução de novo</string>
     <string name="settings_privacy">Tudo é processado localmente. Sem conta, sem sync na nuvem, sem envio de áudio.</string>
+    <string name="support_title">Me pague um café ☕</string>
+    <string name="support_body">Se o Noise Shield é útil para você, apoie o desenvolvimento com um PIX.</string>
+    <string name="support_copy_pix">Copiar PIX: %1$s</string>
+    <string name="support_contact">Contato: %1$s</string>
     <string name="theme_system">Sistema</string>
     <string name="theme_light">Claro</string>
     <string name="theme_dark">Escuro</string>
