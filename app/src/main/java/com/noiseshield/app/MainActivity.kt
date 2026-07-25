@@ -2,11 +2,11 @@ package com.noiseshield.app
 
 import android.Manifest
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
@@ -29,7 +29,7 @@ import com.noiseshield.app.ui.session.SessionViewModel
 import com.noiseshield.app.ui.settings.SettingsScreen
 import com.noiseshield.app.ui.theme.NoiseShieldTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
 
     private val viewModel: SessionViewModel by viewModels {
         SessionViewModel.factory(application as NoiseShieldApp)
