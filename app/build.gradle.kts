@@ -57,6 +57,9 @@ android {
 dependencies {
     implementation(project(":audio-engine"))
 
+    implementation(platform(libs.compose.bom))
+    debugImplementation(platform(libs.compose.bom))
+
     implementation(libs.core.ktx)
     implementation(libs.appcompat)
     implementation(libs.activity.compose)

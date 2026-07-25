@@ -22,7 +22,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -41,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -131,14 +131,21 @@ fun SessionScreen(
                     .clickable(onClick = onTogglePlay),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = if (state.playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = stringResource(
-                        if (state.playing) R.string.action_pause else R.string.action_play,
-                    ),
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(48.dp),
-                )
+                if (state.playing) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_pause),
+                        contentDescription = stringResource(R.string.action_pause),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(48.dp),
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = stringResource(R.string.action_play),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(48.dp),
+                    )
+                }
             }
 
             Spacer(Modifier.height(8.dp))

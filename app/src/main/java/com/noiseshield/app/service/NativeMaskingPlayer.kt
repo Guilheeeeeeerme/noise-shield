@@ -5,7 +5,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -169,7 +168,7 @@ class NativeMaskingPlayer(
 
     override fun handleSetVolume(
         volume: Float,
-        @C.VolumeOperationType volumeOperationType: Int,
+        volumeOperationType: Int,
     ): ListenableFuture<*> {
         this.volume = volume.coerceIn(0f, 1f)
         engine.setVolume(this.volume)
@@ -312,14 +311,14 @@ class NativeMaskingPlayer(
                     .setTitle(
                         context.getString(
                             when (sound) {
-                                MaskingSoundId.WHITE_NOISE -> R.string.sound_white
-                                MaskingSoundId.PINK_NOISE -> R.string.sound_pink
-                                MaskingSoundId.BROWN_NOISE -> R.string.sound_brown
-                                MaskingSoundId.OCEAN_WAVES -> R.string.sound_ocean
+                                MaskingSoundId.WHITE_NOISE -> R.string.sound_white_noise
+                                MaskingSoundId.PINK_NOISE -> R.string.sound_pink_noise
+                                MaskingSoundId.BROWN_NOISE -> R.string.sound_brown_noise
+                                MaskingSoundId.OCEAN_WAVES -> R.string.sound_ocean_waves
                                 MaskingSoundId.RAIN -> R.string.sound_rain
                                 MaskingSoundId.FAN -> R.string.sound_fan
-                                MaskingSoundId.AIR_CONDITIONER -> R.string.sound_ac
-                                MaskingSoundId.CAFE_AMBIENCE -> R.string.sound_cafe
+                                MaskingSoundId.AIR_CONDITIONER -> R.string.sound_air_conditioner
+                                MaskingSoundId.CAFE_AMBIENCE -> R.string.sound_cafe_ambience
                             },
                         ),
                     )
